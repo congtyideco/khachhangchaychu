@@ -50,6 +50,27 @@
   .f-remote{font-size:12.5px;color:var(--ink2);background:#f4f8f9;border:1px dashed var(--line);border-radius:10px;padding:9px 12px}
   .f-badge{display:inline-block;background:#eef4f6;border:1px solid var(--line);color:var(--ink2);font-family:var(--mono);font-size:10.5px;font-weight:700;border-radius:6px;padding:1px 6px}
 
+  /* Toolbar bảng + chọn dòng + thêm thủ công */
+  .tbl-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .tbl-toolbar button{padding:9px 14px;font-size:13px;border-radius:9px}
+  .btn-add{background:var(--teal-l);border:1px solid #bfe0e2;color:var(--teal-d)}
+  .btn-add:hover{background:#d3ecee}
+  .btn-save{background:var(--green);color:#fff;box-shadow:0 3px 10px rgba(30,142,90,.3)}
+  .btn-save:not(:disabled):hover{background:#177449}
+  .btn-delsel{background:#fdecea;border:1px solid #f5c6c0;color:var(--red)}
+  .btn-delsel:not(:disabled):hover{background:#fadbd7}
+  .tb-hint{font-size:12px;color:var(--ink2);margin-left:auto}
+  .cbx{width:17px;height:17px;accent-color:var(--teal);cursor:pointer;vertical-align:middle}
+  td.sel-cell{text-align:center}
+  tr.selected{background:#e8f4f5 !important}
+  tr.new-row{background:#f2fbf6}
+  tr.new-row td{padding:6px 8px}
+  tr.new-row input{width:100%;padding:8px 10px;border:1.5px solid #bfdfcc;border-radius:8px;font-size:13.5px;font-family:inherit;background:#fff}
+  tr.new-row input:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(30,142,90,.13)}
+  tr.new-row .new-tag{font-family:var(--mono);font-size:10.5px;font-weight:800;color:var(--green);background:#dff3e8;border-radius:6px;padding:2px 7px;white-space:nowrap}
+  tr.new-row .row-del{border:1px solid #f0cdc8;background:#fff;color:var(--red);width:28px;height:28px;border-radius:8px;cursor:pointer;font-size:13px;line-height:1;padding:0;font-family:inherit}
+  tr.new-row .row-del:hover{background:#fdecea}
+
   .tbl-wrap{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:10px}
   table{width:100%;border-collapse:collapse;font-size:13.5px}
   thead th{position:sticky;top:0;background:#f2f7f8;color:var(--ink2);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);z-index:2}
@@ -131,10 +152,16 @@
   <section class="card">
     <div class="card-h"><span class="num">B2</span><h2>Bảng dữ liệu khách hàng</h2><span class="hint">Cột "Khai thác" cập nhật realtime khi nhân viên double-click trên ticker</span></div>
     <div class="card-b">
+      <div class="tbl-toolbar">
+        <button class="btn-add" id="btnAddRow">➕ Thêm thủ công</button>
+        <button class="btn-save" id="btnSaveFB" style="display:none">💾 Lưu Firebase (<span id="pendCount">0</span>)</button>
+        <button class="btn-delsel" id="btnDelSel" disabled>🗑 Xoá dòng đã chọn (<span id="selCount">0</span>)</button>
+        <span class="tb-hint" id="tbHint"></span>
+      </div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th style="width:50px">STT</th><th style="width:64px">File</th><th style="width:170px">Người đại diện</th><th>Tên khách hàng</th><th style="width:135px">Điện thoại</th><th>Địa chỉ</th><th style="width:110px">Khai thác</th></tr></thead>
-          <tbody id="tbody"><tr><td colspan="7"><div class="empty">Chưa có dữ liệu — hãy tải file Excel ở Bước 1 (hoặc dữ liệu đang phát sẽ tự hiện từ Firebase).</div></td></tr></tbody>
+          <thead><tr><th style="width:50px">STT</th><th style="width:64px">File</th><th style="width:170px">Người đại diện</th><th>Tên khách hàng</th><th style="width:135px">Điện thoại</th><th>Địa chỉ</th><th style="width:110px">Khai thác</th><th style="width:60px;text-align:center"><input type="checkbox" id="selAll" class="cbx" title="Chọn tất cả / bỏ chọn"></th></tr></thead>
+          <tbody id="tbody"><tr><td colspan="8"><div class="empty">Chưa có dữ liệu — hãy tải file Excel ở Bước 1 (hoặc dữ liệu đang phát sẽ tự hiện từ Firebase).</div></td></tr></tbody>
         </table>
       </div>
       <div class="meta" id="meta"></div>
@@ -231,6 +258,10 @@ let ktMap = {};       // {rowId: true} — trạng thái "Khai thác" (khoá the
 let ctrl = {};        // control từ Firebase
 let dirtyLocal = false; // vừa thay đổi file local chưa phát
 let dataRev = 0;      // tăng mỗi lần dữ liệu đổi → ép dựng lại ticker
+let selSet = new Set();   // ID các dòng đang được chọn
+let pending = [];         // hàng thêm thủ công chưa lưu [{daidien,ten,dienthoai,diachi}]
+let remoteHasData = false;// Firebase hiện có dữ liệu hay không
+const MANUAL_FILE = "Thêm thủ công";
 let idSeq = 0;
 const newId = () => "r" + Date.now().toString(36) + "_" + (idSeq++);
 
@@ -330,14 +361,14 @@ $("fileList").addEventListener("click", async e => {
   if(!confirm('Xoá file "'+files[i].name+'" ('+files[i].rows.length+' khách hàng) khỏi danh sách chạy?')) return;
   const removedIds = files[i].rows.map(r=>r.id);
   files.splice(i, 1);
-  combine(!ctrl.running);
-  if(ctrl.running && db){
+  combine(!ctrl.running && !remoteHasData);
+  if(db && (ctrl.running || remoteHasData)){
     try{
       await db.ref(FB_PATH + "/data").set(rows.length ? rows : null);
       removedIds.forEach(id => { if(ktMap[id]) db.ref(FB_PATH + "/khaithac/" + id).remove(); });
-      if(!rows.length) await db.ref(FB_PATH + "/control/running").set(false);
-      dirtyLocal = false;
-      toast(rows.length ? "🗑 Đã xoá file — ticker cập nhật trên mọi máy" : "🗑 Hết dữ liệu — ticker đã dừng");
+      if(ctrl.running && !rows.length) await db.ref(FB_PATH + "/control/running").set(false);
+      dirtyLocal = false; remoteHasData = rows.length > 0;
+      toast(rows.length ? "🗑 Đã xoá file — dữ liệu đồng bộ trên mọi máy" : "🗑 Hết dữ liệu — ticker đã dừng");
     }catch(err){ toast("❌ " + err.message); }
   } else {
     toast("🗑 Đã xoá file khỏi danh sách");
@@ -350,18 +381,141 @@ function normPhone(v){
   return s;
 }
 
+/* ================================================================
+   CHỌN DÒNG · XOÁ DÒNG ĐÃ CHỌN · THÊM THỦ CÔNG · LƯU FIREBASE
+================================================================ */
+
+/* Nếu dữ liệu đang là bản phát từ Firebase (chưa có file local),
+   chuyển nó thành 1 "file ảo" để mọi thao tác sửa/xoá đều nhất quán */
+function materializeRemote(){
+  if(files.length || !rows.length) return;
+  files = [{ name: "(dữ liệu đang phát)", rows: rows.map(r => {
+    const c = Object.assign({}, r); delete c.fi;
+    if(!c.id) c.id = newId();
+    return c;
+  })}];
+}
+
+function refreshSelUI(){
+  // dọn ID không còn tồn tại
+  const alive = new Set(rows.map(r=>r.id));
+  selSet.forEach(id => { if(!alive.has(id)) selSet.delete(id); });
+  $("selCount").textContent = selSet.size;
+  $("btnDelSel").disabled = !selSet.size;
+  const all = $("selAll");
+  all.checked = rows.length > 0 && selSet.size === rows.length;
+  all.indeterminate = selSet.size > 0 && selSet.size < rows.length;
+  $("pendCount").textContent = pending.length;
+  $("btnSaveFB").style.display = pending.length ? "inline-flex" : "none";
+  $("tbHint").textContent = selSet.size
+    ? "Đã chọn " + selSet.size + " dòng"
+    : (pending.length ? "Điền thông tin rồi bấm 💾 Lưu Firebase" : "");
+}
+
+/* Chọn tất cả / bỏ chọn (header) */
+$("selAll").addEventListener("change", e => {
+  selSet = e.target.checked ? new Set(rows.map(r=>r.id)) : new Set();
+  renderTable();
+});
+
+/* Chọn thủ công từng dòng + thao tác trên hàng thêm mới (event delegation) */
+$("tbody").addEventListener("change", e => {
+  const cb = e.target.closest(".row-sel");
+  if(cb){
+    cb.checked ? selSet.add(cb.dataset.id) : selSet.delete(cb.dataset.id);
+    cb.closest("tr").classList.toggle("selected", cb.checked);
+    refreshSelUI();
+  }
+});
+$("tbody").addEventListener("input", e => {
+  const inp = e.target.closest("tr.new-row input");
+  if(inp) pending[+inp.dataset.p][inp.dataset.k] = inp.value;   // không re-render để giữ focus gõ
+});
+$("tbody").addEventListener("click", e => {
+  const del = e.target.closest("[data-pdel]");
+  if(del){ pending.splice(+del.dataset.pdel, 1); renderTable(); }
+});
+
+/* ➕ Thêm thủ công → xuất hiện hàng nhập mới ghim đầu bảng */
+$("btnAddRow").addEventListener("click", () => {
+  pending.push({daidien:"", ten:"", dienthoai:"", diachi:""});
+  renderTable();
+  const first = $("tbody").querySelector('tr.new-row input[data-k="daidien"]');
+  if(first) first.focus();
+});
+
+/* 💾 Lưu Firebase — hợp lệ hoá, gộp vào file ảo "Thêm thủ công", đẩy lên /data */
+$("btnSaveFB").addEventListener("click", async () => {
+  const valid = [], skipped = [];
+  pending.forEach(p => {
+    const r = { daidien: norm(p.daidien), ten: norm(p.ten), dienthoai: normPhone(p.dienthoai), diachi: norm(p.diachi) };
+    (r.ten || r.dienthoai) ? valid.push(r) : skipped.push(r);
+  });
+  if(!valid.length) return toast("⚠️ Cần ít nhất Tên khách hàng hoặc Điện thoại");
+  materializeRemote();
+  let mf = files.find(f => f.name === MANUAL_FILE);
+  if(!mf){ mf = { name: MANUAL_FILE, rows: [] }; files.push(mf); }
+  valid.forEach(r => mf.rows.push(Object.assign({ id: newId(), f: MANUAL_FILE }, r)));
+  pending = [];
+  combine(false);
+  if(db){
+    try{
+      await db.ref(FB_PATH + "/data").set(rows);
+      dirtyLocal = false; remoteHasData = true;
+      toast("💾 Đã lưu " + valid.length + " khách hàng lên Firebase" + (ctrl.running ? " — ticker cập nhật ngay" : " — bấm ▶ CHẠY để phát"));
+    }catch(err){ toast("❌ Lỗi lưu Firebase: " + err.message); }
+  } else toast("💾 Đã thêm " + valid.length + " KH (chưa kết nối Firebase)");
+  if(skipped.length) toast("⚠️ Bỏ qua " + skipped.length + " hàng trống");
+});
+
+/* 🗑 Xoá các dòng đã chọn (chọn tất cả hoặc thủ công) */
+$("btnDelSel").addEventListener("click", async () => {
+  if(!selSet.size) return;
+  if(!confirm("Xoá " + selSet.size + " dòng khách hàng đã chọn khỏi bảng chạy chữ?")) return;
+  materializeRemote();
+  const removed = [...selSet];
+  files.forEach(f => f.rows = f.rows.filter(r => !selSet.has(r.id)));
+  files = files.filter(f => f.rows.length);
+  selSet.clear();
+  combine(false);
+  if(db && (ctrl.running || remoteHasData)){
+    try{
+      await db.ref(FB_PATH + "/data").set(rows.length ? rows : null);
+      removed.forEach(id => { if(ktMap[id]) db.ref(FB_PATH + "/khaithac/" + id).remove(); });
+      if(ctrl.running && !rows.length) await db.ref(FB_PATH + "/control/running").set(false);
+      dirtyLocal = false; remoteHasData = rows.length > 0;
+      toast("🗑 Đã xoá " + removed.length + " dòng" + (ctrl.running ? " — ticker cập nhật trên mọi máy" : ""));
+    }catch(err){ toast("❌ " + err.message); }
+  } else {
+    dirtyLocal = true;
+    toast("🗑 Đã xoá " + removed.length + " dòng khỏi danh sách");
+  }
+});
+
 /* ---------- Bảng dữ liệu ---------- */
 function renderTable(){
   const tb = $("tbody");
-  if(!rows.length){
-    tb.innerHTML = '<tr><td colspan="7"><div class="empty">Chưa có dữ liệu — hãy tải file Excel ở Bước 1.</div></td></tr>';
+  const pendHtml = pending.map((p,i)=>`<tr class="new-row">
+      <td><span class="new-tag">MỚI</span></td>
+      <td><span class="f-badge">✍️</span></td>
+      <td><input data-p="${i}" data-k="daidien" value="${esc(p.daidien)}" placeholder="Người đại diện"></td>
+      <td><input data-p="${i}" data-k="ten" value="${esc(p.ten)}" placeholder="Tên khách hàng *"></td>
+      <td><input data-p="${i}" data-k="dienthoai" value="${esc(p.dienthoai)}" placeholder="Điện thoại" inputmode="tel"></td>
+      <td><input data-p="${i}" data-k="diachi" value="${esc(p.diachi)}" placeholder="Địa chỉ"></td>
+      <td><span style="color:#b3c2c8">—</span></td>
+      <td class="sel-cell"><button class="row-del" data-pdel="${i}" title="Bỏ hàng này">✕</button></td>
+    </tr>`).join("");
+
+  if(!rows.length && !pending.length){
+    tb.innerHTML = '<tr><td colspan="8"><div class="empty">Chưa có dữ liệu — tải file Excel ở Bước 1 hoặc bấm ➕ Thêm thủ công.</div></td></tr>';
     $("meta").textContent = "";
     $("btnRun").disabled = true;
+    refreshSelUI();
     return;
   }
-  tb.innerHTML = rows.map((r,i)=>{
-    const kt = ktMap[r.id];
-    return `<tr class="${kt?'kt':''}">
+  tb.innerHTML = pendHtml + rows.map((r,i)=>{
+    const kt = ktMap[r.id], sel = selSet.has(r.id);
+    return `<tr class="${kt?'kt':''}${sel?' selected':''}">
       <td class="stt">${i+1}</td>
       <td>${r.f ? '<span class="f-badge" title="'+esc(r.f)+'">📁 '+((r.fi??0)+1)+'</span>' : '<span style="color:#b3c2c8">—</span>'}</td>
       <td>${r.daidien ? '🧑‍💼 '+esc(r.daidien) : '<span style="color:#b3c2c8">—</span>'}</td>
@@ -369,13 +523,16 @@ function renderTable(){
       <td class="phone">${esc(r.dienthoai)}</td>
       <td>${esc(r.diachi)}</td>
       <td>${kt?'<span class="badge-kt">✔ KHAI THÁC</span>':'<span style="color:#b3c2c8">—</span>'}</td>
+      <td class="sel-cell"><input type="checkbox" class="cbx row-sel" data-id="${esc(r.id||'')}" ${sel?'checked':''}></td>
     </tr>`;
   }).join("");
   const ktCount = rows.filter(r=>ktMap[r.id]).length;
   $("meta").innerHTML = "Tổng <b>"+rows.length+"</b> khách hàng"
     + (files.length ? " từ <b>"+files.length+"</b> file (chạy nối tiếp theo thứ tự)" : "")
-    + " · Đã khai thác: <b>"+ktCount+"</b>";
-  $("btnRun").disabled = false;
+    + " · Đã khai thác: <b>"+ktCount+"</b>"
+    + (pending.length ? ' · <b style="color:var(--green)">'+pending.length+' hàng mới chưa lưu</b>' : "");
+  $("btnRun").disabled = !rows.length;
+  refreshSelUI();
 }
 
 /* ---------- Cài đặt: cập nhật live lên Firebase khi đang chạy ---------- */
@@ -418,7 +575,7 @@ $("btnRun").addEventListener("click", async () => {
         updatedAt: firebase.database.ServerValue.TIMESTAMP
       })
     });
-    dirtyLocal = false;
+    dirtyLocal = false; remoteHasData = true;
     toast("▶ Đang phát ticker tới mọi máy");
   }catch(e){ toast("❌ Lỗi ghi Firebase: " + e.message); }
 });
@@ -439,6 +596,7 @@ $("btnResetKT").addEventListener("click", async () => {
 $("btnClear").addEventListener("click", async () => {
   if(!confirm("Xoá TOÀN BỘ dữ liệu (mọi file, cả trên Firebase) để upload danh sách khác?")) return;
   files = []; rows = []; ktMap = {}; dirtyLocal = false; dataRev++;
+  selSet.clear(); pending = []; remoteHasData = false;
   renderFileList();
   renderTable();
   if(db){
@@ -451,6 +609,7 @@ $("btnClear").addEventListener("click", async () => {
 if(db){
   db.ref(FB_PATH + "/data").on("value", s => {
     const v = s.val();
+    remoteHasData = !!v;
     if(dirtyLocal) return;               // đang soạn file mới local, không ghi đè
     rows = Array.isArray(v) ? v : (v ? Object.keys(v).map(k=>v[k]) : []);
     dataRev++;
@@ -467,7 +626,7 @@ if(db){
     ctrl = s.val() || {};
     $("btnStop").disabled = !ctrl.running;
     $("runMeta").innerHTML = ctrl.running
-      ? '🟢 Ticker <b style="color:var(--green)">ĐANG CHẠY</b> — mọi máy mở app / website nhúng script đều thấy. Double-click vào khung khách hàng để đánh dấu Khai thác.'
+      ? '🟢 Ticker <b style="color:var(--green)">ĐANG CHẠY</b> — rê chuột vào thanh để tạm dừng, <b>lăn bánh xe hoặc kéo-rê để tua nhanh</b>, double-click khung khách hàng để đánh dấu Khai thác.'
       : '⚪ Ticker đang tắt.';
     if(ctrl.running) tickerStart(); else tickerStop();
   });
@@ -543,6 +702,40 @@ function tickerStop(){
 /* Hover tạm dừng để double-click dễ dàng */
 tkBar.addEventListener("mouseenter", ()=> tkPaused = true);
 tkBar.addEventListener("mouseleave", ()=> tkPaused = false);
+/* Bánh xe chuột → tua nhanh tới/lui để tìm khách hàng cần khai thác
+   (lăn xuống = tua tới, lăn lên = tua lui; giữ Shift lăn ngang cũng được) */
+tkBar.addEventListener("wheel", e => {
+  e.preventDefault();
+  let d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+  if(e.deltaMode === 1) d *= 33;          // chuột trả delta theo dòng
+  tkX -= d * 2.5;                          // hệ số tua nhanh
+  const min = -tkTrack.scrollWidth, max = window.innerWidth;
+  if(tkX < min) tkX = max;                 // tua quá cuối → vòng về đầu
+  if(tkX > max) tkX = min + 10;            // tua ngược quá đầu → về cuối
+  tkTrack.style.transform = "translate3d("+tkX+"px,-50%,0)";
+}, {passive:false});
+/* Kéo-rê bằng chuột / chạm (tablet, laptop touchpad) cũng tua được — 
+   chỉ tính là kéo khi di >6px nên double-click vẫn hoạt động bình thường */
+let tkDrag = null;
+tkBar.addEventListener("pointerdown", e => { tkDrag = {x0:e.clientX, tk0:tkX, moved:false}; });
+window.addEventListener("pointermove", e => {
+  if(!tkDrag) return;
+  const dx = e.clientX - tkDrag.x0;
+  if(Math.abs(dx) > 6) tkDrag.moved = true;
+  if(tkDrag.moved){
+    tkPaused = true;
+    tkX = tkDrag.tk0 + dx;
+    const min = -tkTrack.scrollWidth, max = window.innerWidth;
+    if(tkX < min) tkX = min; if(tkX > max) tkX = max;
+    tkTrack.style.transform = "translate3d("+tkX+"px,-50%,0)";
+  }
+});
+window.addEventListener("pointerup", () => {
+  if(tkDrag && tkDrag.moved){
+    setTimeout(()=>{ if(!tkBar.matches(":hover")) tkPaused = false; }, 120);
+  }
+  tkDrag = null;
+});
 /* Double-click khung KH → toggle "Khai thác" trên Firebase (mọi máy thấy ngay) */
 tkTrack.addEventListener("dblclick", e => {
   const chip = e.target.closest(".tk-chip");
