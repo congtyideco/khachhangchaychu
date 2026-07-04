@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IDECO · Quản lý Ticker Khách Hàng</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<style>
+  :root{
+    --ink:#15252e; --ink2:#51646f; --line:#dbe4e9;
+    --bg:#eef3f5; --card:#ffffff;
+    --teal:#0e7d84; --teal-d:#0a5f65; --teal-l:#e3f2f3;
+    --amber:#e8a020; --red:#c0392b; --green:#1e8e5a;
+    --mono:'IBM Plex Mono', ui-monospace, Consolas, monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:140px}
+
+  header{background:linear-gradient(120deg,#0a5f65,#0e7d84 60%,#12969e);color:#fff;padding:18px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header .logo{width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:22px;flex:none}
+  header h1{font-size:18px;font-weight:700;letter-spacing:.3px}
+  header p{font-size:12.5px;opacity:.85;margin-top:2px}
+  .status-pill{margin-left:auto;display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.22);padding:7px 14px;border-radius:999px;font-size:12.5px;font-weight:600}
+  .dot{width:9px;height:9px;border-radius:50%;background:#9aa9ad;flex:none}
+  .dot.on{background:#4ade80;box-shadow:0 0 0 4px rgba(74,222,128,.25);animation:pulse 1.4s infinite}
+  @keyframes pulse{50%{box-shadow:0 0 0 7px rgba(74,222,128,.08)}}
+
+  main{max-width:1100px;margin:22px auto;padding:0 16px;display:flex;flex-direction:column;gap:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 2px 10px rgba(21,60,70,.05)}
+  .card-h{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .card-h .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--teal);background:var(--teal-l);border-radius:6px;padding:3px 8px}
+  .card-h h2{font-size:15px;font-weight:700}
+  .card-h .hint{font-size:12px;color:var(--ink2);margin-left:auto}
+  .card-b{padding:18px}
+
+  .drop{border:2px dashed #b7ccd2;border-radius:12px;padding:30px 18px;text-align:center;cursor:pointer;transition:.2s;background:#fbfdfd}
+  .drop:hover,.drop.over{border-color:var(--teal);background:var(--teal-l)}
+  .drop .ic{font-size:32px}
+  .drop b{display:block;margin-top:8px;font-size:14.5px}
+  .drop span{font-size:12.5px;color:var(--ink2)}
+  .file-chip{display:none;margin-top:12px;align-items:center;gap:8px;justify-content:center;font-size:13px;color:var(--teal-d);font-weight:600}
+
+  .tbl-wrap{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  thead th{position:sticky;top:0;background:#f2f7f8;color:var(--ink2);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);z-index:2}
+  tbody td{padding:9px 12px;border-bottom:1px solid #edf2f4;vertical-align:top}
+  tbody tr:hover{background:#f6fafb}
+  tbody tr.kt{background:#fdf6e6}
+  td.phone{font-family:var(--mono);font-size:13px;white-space:nowrap;color:var(--teal-d);font-weight:600}
+  td.stt{font-family:var(--mono);color:#8ba0a8;font-size:12px}
+  .badge-kt{display:inline-block;background:var(--amber);color:#fff;font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 8px;letter-spacing:.04em}
+  .empty{padding:26px;text-align:center;color:var(--ink2);font-size:13.5px}
+  .meta{margin-top:10px;font-size:12.5px;color:var(--ink2)}
+  .meta b{color:var(--teal-d)}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+  .field label{display:block;font-size:12px;font-weight:700;color:var(--ink2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}
+  .field input[type=text]{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit}
+  .field input[type=text]:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(14,125,132,.14)}
+  .field input[type=color]{width:100%;height:40px;border:1px solid var(--line);border-radius:9px;padding:3px;cursor:pointer;background:#fff}
+  .range-row{display:flex;align-items:center;gap:10px}
+  .range-row input[type=range]{flex:1;accent-color:var(--teal)}
+  .range-val{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--teal-d);min-width:74px;text-align:right}
+
+  .ctrl-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  button{border:none;border-radius:10px;padding:12px 22px;font-size:14.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-family:inherit;transition:.15s}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .btn-run{background:var(--teal);color:#fff;box-shadow:0 4px 12px rgba(14,125,132,.35)}
+  .btn-run:not(:disabled):hover{background:var(--teal-d);transform:translateY(-1px)}
+  .btn-stop{background:#fdecea;color:var(--red);border:1px solid #f5c6c0}
+  .btn-stop:not(:disabled):hover{background:#fadbd7}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--ink2);padding:12px 16px}
+  .btn-ghost:hover{background:#f4f8f9}
+  .btn-amber{background:#fdf3df;border:1px solid #f0d9a8;color:#9a6a0c;padding:12px 16px}
+  .btn-amber:hover{background:#fbeac6}
+
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:11px 20px;border-radius:10px;font-size:13.5px;font-weight:600;opacity:0;transition:.3s;z-index:2147483600;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+  .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+  /* ===== Ticker live ngay trong app admin (đồng bộ Firebase như mọi máy khác) ===== */
+  #tkHost{position:fixed;left:0;right:0;bottom:0;z-index:2147483000;display:none}
+  #tkBar{position:relative;width:100%;overflow:hidden;box-shadow:0 -3px 14px rgba(0,0,0,.28)}
+  #tkTrack{position:absolute;top:50%;left:0;display:flex;gap:26px;align-items:center;white-space:nowrap;will-change:transform;transform:translate3d(100vw,-50%,0)}
+  .tk-chip{display:inline-flex;align-items:center;gap:10px;border:2px solid rgba(255,255,255,.55);border-radius:12px;padding:.32em .9em;background:rgba(255,255,255,.07);cursor:pointer;user-select:none;font-weight:600;line-height:1.35;transition:background .2s,border-color .2s}
+  .tk-chip:hover{background:rgba(255,255,255,.16)}
+  .tk-chip .tk-sep{opacity:.55;font-weight:400}
+  .tk-chip.kt{border-color:#ffb02e;background:rgba(255,176,46,.22);color:#ffd58a !important}
+  .tk-chip .tk-note{display:none;background:#ffb02e;color:#3a2600;font-size:.68em;font-weight:800;border-radius:7px;padding:.15em .55em;letter-spacing:.05em}
+  .tk-chip.kt .tk-note{display:inline-block}
+  @media(max-width:640px){ header h1{font-size:15.5px} .card-b{padding:14px} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">📣</div>
+  <div>
+    <h1>QUẢN LÝ TICKER KHÁCH HÀNG · IDECO</h1>
+    <p>Upload Excel → phát chữ chạy realtime tới mọi máy · Double-click khung khách hàng để đánh dấu "Khai thác"</p>
+  </div>
+  <div class="status-pill"><span class="dot" id="fbDot"></span><span id="fbState">Đang kết nối…</span></div>
+</header>
+
+<main>
+
+  <!-- B1 UPLOAD -->
+  <section class="card">
+    <div class="card-h"><span class="num">B1</span><h2>Tải file Excel danh sách khách hàng</h2></div>
+    <div class="card-b">
+      <div class="drop" id="drop">
+        <div class="ic">📄</div>
+        <b>Nhấn để chọn hoặc kéo thả file Excel vào đây</b>
+        <span>Hỗ trợ .xlsx / .xls / .csv — cần các cột: Tên khách hàng, Điện thoại, Địa chỉ</span>
+        <div class="file-chip" id="fileChip">✅ <span id="fileName"></span></div>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden>
+    </div>
+  </section>
+
+  <!-- B2 TABLE -->
+  <section class="card">
+    <div class="card-h"><span class="num">B2</span><h2>Bảng dữ liệu khách hàng</h2><span class="hint">Cột "Khai thác" cập nhật realtime khi nhân viên double-click trên ticker</span></div>
+    <div class="card-b">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th style="width:50px">STT</th><th>Tên khách hàng</th><th style="width:135px">Điện thoại</th><th>Địa chỉ</th><th style="width:110px">Khai thác</th></tr></thead>
+          <tbody id="tbody"><tr><td colspan="5"><div class="empty">Chưa có dữ liệu — hãy tải file Excel ở Bước 1 (hoặc dữ liệu đang phát sẽ tự hiện từ Firebase).</div></td></tr></tbody>
+        </table>
+      </div>
+      <div class="meta" id="meta"></div>
+    </div>
+  </section>
+
+  <!-- B3 SETTINGS -->
+  <section class="card">
+    <div class="card-h"><span class="num">B3</span><h2>Cài đặt hiển thị</h2><span class="hint">Thay đổi áp dụng ngay cho ticker đang chạy trên mọi máy</span></div>
+    <div class="card-b">
+      <div class="grid">
+        <div class="field">
+          <label>Tốc độ chạy chữ</label>
+          <div class="range-row"><input type="range" id="speed" min="30" max="300" step="10" value="110"><span class="range-val" id="speedVal">110 px/s</span></div>
+        </div>
+        <div class="field">
+          <label>Kích thước chữ</label>
+          <div class="range-row"><input type="range" id="fontSize" min="12" max="36" step="1" value="17"><span class="range-val" id="fontSizeVal">17 px</span></div>
+        </div>
+        <div class="field">
+          <label>Độ cao so với đáy màn hình</label>
+          <div class="range-row"><input type="range" id="bottomOffset" min="0" max="400" step="5" value="0"><span class="range-val" id="bottomOffsetVal">0 px</span></div>
+        </div>
+        <div class="field"><label>Màu chữ chạy</label><input type="color" id="txtColor" value="#7dfbd4"></div>
+        <div class="field"><label>Màu nền thanh chạy</label><input type="color" id="bgColor" value="#0a2a30"></div>
+        <div class="field"><label>Tiêu đề đầu dòng (tuỳ chọn)</label><input type="text" id="prefix" placeholder="VD: 🔔 KHÁCH HÀNG CẦN LIÊN HỆ"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- B4 RUN -->
+  <section class="card">
+    <div class="card-h"><span class="num">B4</span><h2>Điều khiển phát</h2></div>
+    <div class="card-b">
+      <div class="ctrl-row">
+        <button class="btn-run" id="btnRun" disabled>▶ CHẠY TICKER</button>
+        <button class="btn-stop" id="btnStop" disabled>⏹ DỪNG</button>
+        <button class="btn-amber" id="btnResetKT">↺ Xoá đánh dấu Khai thác</button>
+        <button class="btn-ghost" id="btnClear">🗑 Xoá dữ liệu</button>
+      </div>
+      <div class="meta" id="runMeta"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Ticker live trong admin (đồng bộ y hệt các máy nhúng script) -->
+<div id="tkHost"><div id="tkBar"><div id="tkTrack"></div></div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================== FIREBASE CONFIG (dự án dulieu2026) ==================
+   Nếu báo lỗi kết nối/permission_denied: kiểm tra lại databaseURL đúng
+   với Realtime Database trong Firebase Console (có thể là
+   https://dulieu2026-3fdb7-default-rtdb.firebaseio.com ).            */
+const FB_CONFIG = {
+  apiKey: "AIzaSyAXH6BO5LHhXAlf9aSFZAa9zOxUz-yjeI0",
+  authDomain: "dulieu2026-3fdb7.firebaseapp.com",
+  databaseURL: "https://dulieu2026-3fdb7-default-rtdb.firebaseio.com",
+  projectId: "dulieu2026-3fdb7",
+  storageBucket: "dulieu2026-3fdb7.firebasestorage.app",
+  messagingSenderId: "600918342462",
+  appId: "1:600918342462:web:fed4c361264a0cc0390a6f"
+};
+const FB_PATH = "tickerKhachHang";
+
+/* ---------- Init Firebase (named app) ---------- */
+let db = null;
+try {
+  const app = firebase.apps.find(a => a.name === "tickerKH-admin")
+           || firebase.initializeApp(FB_CONFIG, "tickerKH-admin");
+  db = app.database();
+  db.ref(".info/connected").on("value", s => {
+    const on = s.val() === true;
+    document.getElementById("fbDot").classList.toggle("on", on);
+    document.getElementById("fbState").textContent = on ? "Firebase đã kết nối" : "Mất kết nối";
+  });
+} catch(e){
+  document.getElementById("fbState").textContent = "Lỗi cấu hình Firebase";
+  console.error(e);
+}
+
+/* ---------- Helpers ---------- */
+const $ = id => document.getElementById(id);
+const norm = s => String(s ?? "").normalize("NFC").trim();
+const flat = s => norm(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d");
+const esc  = s => String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._x); t._x=setTimeout(()=>t.classList.remove("show"),2600); }
+
+let rows = [];        // dữ liệu local (upload) hoặc từ Firebase
+let ktMap = {};       // {index: true} — trạng thái "Khai thác"
+let ctrl = {};        // control từ Firebase
+let dirtyLocal = false; // vừa upload file mới chưa phát
+
+/* ---------- Upload & parse Excel ---------- */
+const drop = $("drop"), fi = $("fileInput");
+drop.addEventListener("click", () => fi.click());
+["dragover","dragenter"].forEach(ev => drop.addEventListener(ev, e=>{e.preventDefault();drop.classList.add("over");}));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e=>{e.preventDefault();drop.classList.remove("over");}));
+drop.addEventListener("drop", e => { if(e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); });
+fi.addEventListener("change", () => { if(fi.files[0]) readFile(fi.files[0]); fi.value=""; });
+
+function readFile(file){
+  const rd = new FileReader();
+  rd.onload = e => {
+    try{
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:"array"});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      parseRows(XLSX.utils.sheet_to_json(ws, {header:1, defval:""}));
+      $("fileChip").style.display="inline-flex";
+      $("fileName").textContent = file.name + " · " + rows.length + " khách hàng";
+    }catch(err){ toast("❌ Không đọc được file: " + err.message); }
+  };
+  rd.readAsArrayBuffer(file);
+}
+
+function parseRows(arr){
+  if(!arr.length){ rows=[]; renderTable(); return; }
+  let hIdx = 0, cTen=-1, cDT=-1, cDC=-1;
+  outer:
+  for(let i=0;i<Math.min(arr.length,10);i++){
+    for(let j=0;j<arr[i].length;j++){
+      const h = flat(arr[i][j]);
+      if(/ten.*(khach|kh\b)|khach.?hang|customer|^ten$/.test(h)){ hIdx=i; break outer; }
+    }
+  }
+  const header = arr[hIdx].map(flat);
+  header.forEach((h,j)=>{
+    if(cTen<0 && /ten|khach|customer|name/.test(h)) cTen=j;
+    else if(cDT<0 && /dien.?thoai|sdt|phone|so.?dt|dt\b/.test(h)) cDT=j;
+    else if(cDC<0 && /dia.?chi|address|d\/c/.test(h)) cDC=j;
+  });
+  if(cTen<0) cTen=0; if(cDT<0) cDT=1; if(cDC<0) cDC=2;
+
+  rows = arr.slice(hIdx+1).map(r => ({
+    ten: norm(r[cTen]),
+    dienthoai: normPhone(r[cDT]),
+    diachi: norm(r[cDC])
+  })).filter(r => r.ten || r.dienthoai || r.diachi);
+
+  ktMap = {};
+  dirtyLocal = true;
+  renderTable();
+  toast("✅ Đã tải " + rows.length + " khách hàng — bấm ▶ CHẠY để phát");
+}
+
+function normPhone(v){
+  let s = norm(v).replace(/[^\d+]/g,"");
+  if(/^\d{9}$/.test(s)) s = "0"+s;
+  return s;
+}
+
+/* ---------- Bảng dữ liệu ---------- */
+function renderTable(){
+  const tb = $("tbody");
+  if(!rows.length){
+    tb.innerHTML = '<tr><td colspan="5"><div class="empty">Chưa có dữ liệu — hãy tải file Excel ở Bước 1.</div></td></tr>';
+    $("meta").textContent = "";
+    $("btnRun").disabled = true;
+    return;
+  }
+  tb.innerHTML = rows.map((r,i)=>`<tr class="${ktMap[i]?'kt':''}">
+      <td class="stt">${i+1}</td>
+      <td><b>${esc(r.ten)}</b></td>
+      <td class="phone">${esc(r.dienthoai)}</td>
+      <td>${esc(r.diachi)}</td>
+      <td>${ktMap[i]?'<span class="badge-kt">✔ KHAI THÁC</span>':'<span style="color:#b3c2c8">—</span>'}</td>
+    </tr>`).join("");
+  const ktCount = Object.keys(ktMap).filter(k=>ktMap[k]).length;
+  $("meta").innerHTML = "Tổng <b>"+rows.length+"</b> khách hàng · Đã khai thác: <b>"+ktCount+"</b>";
+  $("btnRun").disabled = false;
+}
+
+/* ---------- Cài đặt: cập nhật live lên Firebase khi đang chạy ---------- */
+const settingIds = ["speed","fontSize","bottomOffset","txtColor","bgColor","prefix"];
+function readSettings(){
+  return {
+    speed: +$("speed").value,
+    fontSize: +$("fontSize").value,
+    bottomOffset: +$("bottomOffset").value,
+    color: $("txtColor").value,
+    bg: $("bgColor").value,
+    prefix: norm($("prefix").value)
+  };
+}
+function refreshLabels(){
+  $("speedVal").textContent = $("speed").value + " px/s";
+  $("fontSizeVal").textContent = $("fontSize").value + " px";
+  $("bottomOffsetVal").textContent = $("bottomOffset").value + " px";
+}
+let settleTimer = null;
+settingIds.forEach(id => $(id).addEventListener("input", () => {
+  refreshLabels();
+  if(ctrl.running && db){                 // đang chạy → đồng bộ live (debounce 350ms)
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => db.ref(FB_PATH + "/control").update(readSettings()), 350);
+  }
+}));
+refreshLabels();
+
+/* ---------- Điều khiển ---------- */
+$("btnRun").addEventListener("click", async () => {
+  if(!db) return toast("❌ Chưa kết nối Firebase");
+  if(!rows.length) return toast("⚠️ Chưa có dữ liệu");
+  try{
+    await db.ref(FB_PATH).set({
+      data: rows,
+      khaithac: null,                     // phiên mới → xoá đánh dấu cũ
+      control: Object.assign(readSettings(), {
+        running: true,
+        updatedAt: firebase.database.ServerValue.TIMESTAMP
+      })
+    });
+    dirtyLocal = false;
+    toast("▶ Đang phát ticker tới mọi máy");
+  }catch(e){ toast("❌ Lỗi ghi Firebase: " + e.message); }
+});
+
+$("btnStop").addEventListener("click", async () => {
+  if(!db) return;
+  try{ await db.ref(FB_PATH + "/control/running").set(false); toast("⏹ Đã dừng ticker trên mọi máy"); }
+  catch(e){ toast("❌ " + e.message); }
+});
+
+$("btnResetKT").addEventListener("click", async () => {
+  if(!db) return;
+  if(!confirm("Xoá toàn bộ đánh dấu 'Khai thác' hiện tại?")) return;
+  try{ await db.ref(FB_PATH + "/khaithac").remove(); toast("↺ Đã xoá đánh dấu Khai thác"); }
+  catch(e){ toast("❌ " + e.message); }
+});
+
+$("btnClear").addEventListener("click", async () => {
+  if(!confirm("Xoá dữ liệu khách hàng (cả trên Firebase) để upload danh sách khác?")) return;
+  rows = []; ktMap = {}; dirtyLocal = false;
+  renderTable();
+  $("fileChip").style.display="none";
+  if(db){
+    try{ await db.ref(FB_PATH).remove(); toast("🗑 Đã xoá dữ liệu — sẵn sàng upload file mới"); }
+    catch(e){ toast("❌ " + e.message); }
+  }
+});
+
+/* ---------- Lắng nghe Firebase (đồng bộ mọi máy, kể cả admin mở lại sau) ---------- */
+if(db){
+  db.ref(FB_PATH + "/data").on("value", s => {
+    const v = s.val();
+    if(dirtyLocal) return;               // đang soạn file mới local, không ghi đè
+    rows = Array.isArray(v) ? v : (v ? Object.keys(v).map(k=>v[k]) : []);
+    renderTable();
+  });
+  db.ref(FB_PATH + "/khaithac").on("value", s => {
+    ktMap = s.val() || {};
+    renderTable();
+    tickerRestyle();
+  });
+  db.ref(FB_PATH + "/control").on("value", s => {
+    ctrl = s.val() || {};
+    $("btnStop").disabled = !ctrl.running;
+    $("runMeta").innerHTML = ctrl.running
+      ? '🟢 Ticker <b style="color:var(--green)">ĐANG CHẠY</b> — mọi máy mở app / website nhúng script đều thấy. Double-click vào khung khách hàng để đánh dấu Khai thác.'
+      : '⚪ Ticker đang tắt.';
+    if(ctrl.running) tickerStart(); else tickerStop();
+  });
+}
+
+/* ================================================================
+   TICKER LIVE TRONG ADMIN — cùng logic với script nhúng
+================================================================ */
+const tkHost = $("tkHost"), tkBar = $("tkBar"), tkTrack = $("tkTrack");
+let tkX = 0, tkRaf = null, tkPaused = false, tkLastTs = 0, tkBuiltKey = "";
+
+function tickerBuild(){
+  const list = (ctrl && db) ? null : null; // rows luôn đồng bộ từ Firebase khi chạy
+  const key = rows.length + "|" + (ctrl.prefix||"") + "|" + (ctrl.updatedAt||0);
+  if(key === tkBuiltKey) return;
+  tkBuiltKey = key;
+  let html = "";
+  if(ctrl.prefix) html += '<span style="font-weight:800;opacity:.95">'+esc(ctrl.prefix)+'</span>';
+  html += rows.map((r,i)=>{
+    const parts = [];
+    if(r.ten) parts.push("👤 <b>"+esc(r.ten)+"</b>");
+    if(r.dienthoai) parts.push("📞 "+esc(r.dienthoai));
+    if(r.diachi) parts.push("📍 "+esc(r.diachi));
+    return '<span class="tk-chip" data-i="'+i+'"><span style="opacity:.6;font-size:.75em">'+(i+1)+'</span> '
+         + parts.join(' <span class="tk-sep">|</span> ')
+         + ' <span class="tk-note">KHAI THÁC</span></span>';
+  }).join("");
+  tkTrack.innerHTML = html;
+  tickerRestyle();
+  tkX = window.innerWidth;
+}
+function tickerRestyle(){
+  tkTrack.querySelectorAll(".tk-chip").forEach(ch => {
+    ch.classList.toggle("kt", !!ktMap[ch.dataset.i]);
+  });
+}
+function tickerApplyStyle(){
+  const fs = ctrl.fontSize || 17;
+  tkBar.style.background = ctrl.bg || "#0a2a30";
+  tkBar.style.height = Math.round(fs*2.6) + "px";
+  tkTrack.style.color = ctrl.color || "#7dfbd4";
+  tkTrack.style.fontSize = fs + "px";
+  tkHost.style.bottom = (ctrl.bottomOffset || 0) + "px";
+}
+function tkLoop(ts){
+  if(!tkLastTs) tkLastTs = ts;
+  const dt = Math.min((ts - tkLastTs)/1000, .1);
+  tkLastTs = ts;
+  if(!tkPaused){
+    tkX -= (ctrl.speed || 110) * dt;
+    if(tkX < -tkTrack.scrollWidth) tkX = window.innerWidth;
+    tkTrack.style.transform = "translate3d("+tkX+"px,-50%,0)";
+  }
+  tkRaf = requestAnimationFrame(tkLoop);
+}
+function tickerStart(){
+  tickerBuild();
+  tickerApplyStyle();
+  tkHost.style.display = "block";
+  if(!tkRaf){ tkLastTs = 0; tkRaf = requestAnimationFrame(tkLoop); }
+}
+function tickerStop(){
+  tkHost.style.display = "none";
+  if(tkRaf){ cancelAnimationFrame(tkRaf); tkRaf = null; }
+  tkBuiltKey = "";
+}
+/* Hover tạm dừng để double-click dễ dàng */
+tkBar.addEventListener("mouseenter", ()=> tkPaused = true);
+tkBar.addEventListener("mouseleave", ()=> tkPaused = false);
+/* Double-click khung KH → toggle "Khai thác" trên Firebase (mọi máy thấy ngay) */
+tkTrack.addEventListener("dblclick", e => {
+  const chip = e.target.closest(".tk-chip");
+  if(!chip || !db) return;
+  const i = chip.dataset.i;
+  db.ref(FB_PATH + "/khaithac/" + i).transaction(v => v ? null : true);
+});
+/* Nghe thay đổi style live khi đang chạy */
+setInterval(()=>{ if(ctrl.running){ tickerApplyStyle(); } }, 600);
+</script>
+</body>
+</html>
