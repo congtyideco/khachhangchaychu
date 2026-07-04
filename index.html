@@ -40,7 +40,15 @@
   .drop .ic{font-size:32px}
   .drop b{display:block;margin-top:8px;font-size:14.5px}
   .drop span{font-size:12.5px;color:var(--ink2)}
-  .file-chip{display:none;margin-top:12px;align-items:center;gap:8px;justify-content:center;font-size:13px;color:var(--teal-d);font-weight:600}
+  .file-list{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+  .f-chip{display:inline-flex;align-items:center;gap:9px;background:var(--teal-l);border:1px solid #bfe0e2;border-radius:10px;padding:8px 10px 8px 12px;font-size:13px;font-weight:600;color:var(--teal-d);max-width:100%}
+  .f-chip .f-ord{background:var(--teal);color:#fff;font-family:var(--mono);font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;flex:none}
+  .f-chip .f-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}
+  .f-chip .f-count{font-family:var(--mono);font-size:11.5px;color:var(--ink2);font-weight:700;flex:none}
+  .f-chip .f-del{border:none;background:#fff;color:var(--red);width:24px;height:24px;border-radius:7px;cursor:pointer;font-size:13px;line-height:1;padding:0;flex:none;border:1px solid #f0cdc8;font-family:inherit}
+  .f-chip .f-del:hover{background:#fdecea}
+  .f-remote{font-size:12.5px;color:var(--ink2);background:#f4f8f9;border:1px dashed var(--line);border-radius:10px;padding:9px 12px}
+  .f-badge{display:inline-block;background:#eef4f6;border:1px solid var(--line);color:var(--ink2);font-family:var(--mono);font-size:10.5px;font-weight:700;border-radius:6px;padding:1px 6px}
 
   .tbl-wrap{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:10px}
   table{width:100%;border-collapse:collapse;font-size:13.5px}
@@ -111,11 +119,11 @@
     <div class="card-b">
       <div class="drop" id="drop">
         <div class="ic">📄</div>
-        <b>Nhấn để chọn hoặc kéo thả file Excel vào đây</b>
-        <span>Hỗ trợ .xlsx / .xls / .csv — cần các cột: Tên khách hàng, Điện thoại, Địa chỉ</span>
-        <div class="file-chip" id="fileChip">✅ <span id="fileName"></span></div>
+        <b>Nhấn để chọn hoặc kéo thả MỘT hoặc NHIỀU file Excel vào đây</b>
+        <span>Hỗ trợ .xlsx / .xls / .csv — các cột: Người đại diện (tuỳ chọn), Tên khách hàng, Điện thoại, Địa chỉ · Các file sẽ nối tiếp nhau khi chạy</span>
       </div>
-      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" multiple hidden>
+      <div class="file-list" id="fileList"></div>
     </div>
   </section>
 
@@ -125,8 +133,8 @@
     <div class="card-b">
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th style="width:50px">STT</th><th>Tên khách hàng</th><th style="width:135px">Điện thoại</th><th>Địa chỉ</th><th style="width:110px">Khai thác</th></tr></thead>
-          <tbody id="tbody"><tr><td colspan="5"><div class="empty">Chưa có dữ liệu — hãy tải file Excel ở Bước 1 (hoặc dữ liệu đang phát sẽ tự hiện từ Firebase).</div></td></tr></tbody>
+          <thead><tr><th style="width:50px">STT</th><th style="width:64px">File</th><th style="width:170px">Người đại diện</th><th>Tên khách hàng</th><th style="width:135px">Điện thoại</th><th>Địa chỉ</th><th style="width:110px">Khai thác</th></tr></thead>
+          <tbody id="tbody"><tr><td colspan="7"><div class="empty">Chưa có dữ liệu — hãy tải file Excel ở Bước 1 (hoặc dữ liệu đang phát sẽ tự hiện từ Firebase).</div></td></tr></tbody>
         </table>
       </div>
       <div class="meta" id="meta"></div>
@@ -217,36 +225,44 @@ const flat = s => norm(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f
 const esc  = s => String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._x); t._x=setTimeout(()=>t.classList.remove("show"),2600); }
 
-let rows = [];        // dữ liệu local (upload) hoặc từ Firebase
-let ktMap = {};       // {index: true} — trạng thái "Khai thác"
+let files = [];       // [{name, rows:[{id,daidien,ten,dienthoai,diachi,f}]}] — dữ liệu local theo từng file
+let rows = [];        // dữ liệu gộp (nối tiếp các file) hoặc từ Firebase
+let ktMap = {};       // {rowId: true} — trạng thái "Khai thác" (khoá theo ID ổn định)
 let ctrl = {};        // control từ Firebase
-let dirtyLocal = false; // vừa upload file mới chưa phát
+let dirtyLocal = false; // vừa thay đổi file local chưa phát
+let dataRev = 0;      // tăng mỗi lần dữ liệu đổi → ép dựng lại ticker
+let idSeq = 0;
+const newId = () => "r" + Date.now().toString(36) + "_" + (idSeq++);
 
-/* ---------- Upload & parse Excel ---------- */
+/* ---------- Upload & parse Excel (nhiều file) ---------- */
 const drop = $("drop"), fi = $("fileInput");
 drop.addEventListener("click", () => fi.click());
 ["dragover","dragenter"].forEach(ev => drop.addEventListener(ev, e=>{e.preventDefault();drop.classList.add("over");}));
 ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e=>{e.preventDefault();drop.classList.remove("over");}));
-drop.addEventListener("drop", e => { if(e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); });
-fi.addEventListener("change", () => { if(fi.files[0]) readFile(fi.files[0]); fi.value=""; });
+drop.addEventListener("drop", e => readFiles(e.dataTransfer.files));
+fi.addEventListener("change", () => { readFiles(fi.files); fi.value=""; });
 
-function readFile(file){
-  const rd = new FileReader();
-  rd.onload = e => {
-    try{
-      const wb = XLSX.read(new Uint8Array(e.target.result), {type:"array"});
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      parseRows(XLSX.utils.sheet_to_json(ws, {header:1, defval:""}));
-      $("fileChip").style.display="inline-flex";
-      $("fileName").textContent = file.name + " · " + rows.length + " khách hàng";
-    }catch(err){ toast("❌ Không đọc được file: " + err.message); }
-  };
-  rd.readAsArrayBuffer(file);
+function readFiles(list){
+  Array.from(list || []).forEach(file => {
+    const rd = new FileReader();
+    rd.onload = e => {
+      try{
+        const wb = XLSX.read(new Uint8Array(e.target.result), {type:"array"});
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const parsed = parseSheet(XLSX.utils.sheet_to_json(ws, {header:1, defval:""}), file.name);
+        if(!parsed.length){ toast("⚠️ " + file.name + ": không tìm thấy dòng dữ liệu"); return; }
+        files.push({ name: file.name, rows: parsed });
+        combine(true);
+        toast("✅ " + file.name + " · " + parsed.length + " KH — tổng " + rows.length + " khách hàng");
+      }catch(err){ toast("❌ " + file.name + ": " + err.message); }
+    };
+    rd.readAsArrayBuffer(file);
+  });
 }
 
-function parseRows(arr){
-  if(!arr.length){ rows=[]; renderTable(); return; }
-  let hIdx = 0, cTen=-1, cDT=-1, cDC=-1;
+function parseSheet(arr, fileName){
+  if(!arr.length) return [];
+  let hIdx = 0, cTen=-1, cDT=-1, cDC=-1, cDD=-1;
   outer:
   for(let i=0;i<Math.min(arr.length,10);i++){
     for(let j=0;j<arr[i].length;j++){
@@ -256,23 +272,77 @@ function parseRows(arr){
   }
   const header = arr[hIdx].map(flat);
   header.forEach((h,j)=>{
-    if(cTen<0 && /ten|khach|customer|name/.test(h)) cTen=j;
+    if(cDD<0 && /(nguoi.?)?dai.?dien|lien.?he|contact|rep(resentative)?\b/.test(h)) cDD=j;
+    else if(cTen<0 && /ten|khach|customer|name/.test(h)) cTen=j;
     else if(cDT<0 && /dien.?thoai|sdt|phone|so.?dt|dt\b/.test(h)) cDT=j;
     else if(cDC<0 && /dia.?chi|address|d\/c/.test(h)) cDC=j;
   });
-  if(cTen<0) cTen=0; if(cDT<0) cDT=1; if(cDC<0) cDC=2;
-
-  rows = arr.slice(hIdx+1).map(r => ({
+  // Fallback: ≥4 cột → Đại diện | Tên | ĐT | Địa chỉ ; 3 cột → Tên | ĐT | Địa chỉ
+  if(cTen<0 && cDT<0 && cDC<0){
+    const w = (arr[hIdx]||[]).length;
+    if(w>=4 && cDD<0){ cDD=0; cTen=1; cDT=2; cDC=3; }
+    else { cTen=0; cDT=1; cDC=2; }
+  } else {
+    if(cTen<0) cTen=0; if(cDT<0) cDT=1; if(cDC<0) cDC=2;
+  }
+  return arr.slice(hIdx+1).map(r => ({
+    id: newId(),
+    f: norm(fileName),
+    daidien: cDD>=0 ? norm(r[cDD]) : "",
     ten: norm(r[cTen]),
     dienthoai: normPhone(r[cDT]),
     diachi: norm(r[cDC])
-  })).filter(r => r.ten || r.dienthoai || r.diachi);
-
-  ktMap = {};
-  dirtyLocal = true;
-  renderTable();
-  toast("✅ Đã tải " + rows.length + " khách hàng — bấm ▶ CHẠY để phát");
+  })).filter(r => r.ten || r.dienthoai || r.diachi || r.daidien);
 }
+
+/* Gộp các file theo thứ tự tải lên → chạy nối tiếp */
+function combine(markDirty){
+  rows = [];
+  files.forEach((f, fi) => f.rows.forEach(r => rows.push(Object.assign({}, r, {fi: fi}))));
+  if(markDirty) dirtyLocal = true;
+  dataRev++;
+  renderFileList();
+  renderTable();
+}
+
+function renderFileList(){
+  const el = $("fileList");
+  if(!files.length){
+    el.innerHTML = rows.length
+      ? '<div class="f-remote">📡 Đang hiển thị dữ liệu phát từ Firebase (máy khác upload). Tải file mới tại đây để thay thế.</div>'
+      : "";
+    return;
+  }
+  el.innerHTML = files.map((f,i)=>
+    '<span class="f-chip">'+
+      '<span class="f-ord">'+(i+1)+'</span>'+
+      '<span class="f-name" title="'+esc(f.name)+'">'+esc(f.name)+'</span>'+
+      '<span class="f-count">'+f.rows.length+' KH</span>'+
+      '<button class="f-del" data-i="'+i+'" title="Xoá file này">✕</button>'+
+    '</span>').join("");
+}
+
+/* Xoá từng file — nếu ticker đang chạy thì cập nhật ngay lên Firebase */
+$("fileList").addEventListener("click", async e => {
+  const btn = e.target.closest(".f-del");
+  if(!btn) return;
+  const i = +btn.dataset.i;
+  if(!confirm('Xoá file "'+files[i].name+'" ('+files[i].rows.length+' khách hàng) khỏi danh sách chạy?')) return;
+  const removedIds = files[i].rows.map(r=>r.id);
+  files.splice(i, 1);
+  combine(!ctrl.running);
+  if(ctrl.running && db){
+    try{
+      await db.ref(FB_PATH + "/data").set(rows.length ? rows : null);
+      removedIds.forEach(id => { if(ktMap[id]) db.ref(FB_PATH + "/khaithac/" + id).remove(); });
+      if(!rows.length) await db.ref(FB_PATH + "/control/running").set(false);
+      dirtyLocal = false;
+      toast(rows.length ? "🗑 Đã xoá file — ticker cập nhật trên mọi máy" : "🗑 Hết dữ liệu — ticker đã dừng");
+    }catch(err){ toast("❌ " + err.message); }
+  } else {
+    toast("🗑 Đã xoá file khỏi danh sách");
+  }
+});
 
 function normPhone(v){
   let s = norm(v).replace(/[^\d+]/g,"");
@@ -284,20 +354,27 @@ function normPhone(v){
 function renderTable(){
   const tb = $("tbody");
   if(!rows.length){
-    tb.innerHTML = '<tr><td colspan="5"><div class="empty">Chưa có dữ liệu — hãy tải file Excel ở Bước 1.</div></td></tr>';
+    tb.innerHTML = '<tr><td colspan="7"><div class="empty">Chưa có dữ liệu — hãy tải file Excel ở Bước 1.</div></td></tr>';
     $("meta").textContent = "";
     $("btnRun").disabled = true;
     return;
   }
-  tb.innerHTML = rows.map((r,i)=>`<tr class="${ktMap[i]?'kt':''}">
+  tb.innerHTML = rows.map((r,i)=>{
+    const kt = ktMap[r.id];
+    return `<tr class="${kt?'kt':''}">
       <td class="stt">${i+1}</td>
+      <td>${r.f ? '<span class="f-badge" title="'+esc(r.f)+'">📁 '+((r.fi??0)+1)+'</span>' : '<span style="color:#b3c2c8">—</span>'}</td>
+      <td>${r.daidien ? '🧑‍💼 '+esc(r.daidien) : '<span style="color:#b3c2c8">—</span>'}</td>
       <td><b>${esc(r.ten)}</b></td>
       <td class="phone">${esc(r.dienthoai)}</td>
       <td>${esc(r.diachi)}</td>
-      <td>${ktMap[i]?'<span class="badge-kt">✔ KHAI THÁC</span>':'<span style="color:#b3c2c8">—</span>'}</td>
-    </tr>`).join("");
-  const ktCount = Object.keys(ktMap).filter(k=>ktMap[k]).length;
-  $("meta").innerHTML = "Tổng <b>"+rows.length+"</b> khách hàng · Đã khai thác: <b>"+ktCount+"</b>";
+      <td>${kt?'<span class="badge-kt">✔ KHAI THÁC</span>':'<span style="color:#b3c2c8">—</span>'}</td>
+    </tr>`;
+  }).join("");
+  const ktCount = rows.filter(r=>ktMap[r.id]).length;
+  $("meta").innerHTML = "Tổng <b>"+rows.length+"</b> khách hàng"
+    + (files.length ? " từ <b>"+files.length+"</b> file (chạy nối tiếp theo thứ tự)" : "")
+    + " · Đã khai thác: <b>"+ktCount+"</b>";
   $("btnRun").disabled = false;
 }
 
@@ -360,12 +437,12 @@ $("btnResetKT").addEventListener("click", async () => {
 });
 
 $("btnClear").addEventListener("click", async () => {
-  if(!confirm("Xoá dữ liệu khách hàng (cả trên Firebase) để upload danh sách khác?")) return;
-  rows = []; ktMap = {}; dirtyLocal = false;
+  if(!confirm("Xoá TOÀN BỘ dữ liệu (mọi file, cả trên Firebase) để upload danh sách khác?")) return;
+  files = []; rows = []; ktMap = {}; dirtyLocal = false; dataRev++;
+  renderFileList();
   renderTable();
-  $("fileChip").style.display="none";
   if(db){
-    try{ await db.ref(FB_PATH).remove(); toast("🗑 Đã xoá dữ liệu — sẵn sàng upload file mới"); }
+    try{ await db.ref(FB_PATH).remove(); toast("🗑 Đã xoá toàn bộ dữ liệu — sẵn sàng upload file mới"); }
     catch(e){ toast("❌ " + e.message); }
   }
 });
@@ -376,7 +453,10 @@ if(db){
     const v = s.val();
     if(dirtyLocal) return;               // đang soạn file mới local, không ghi đè
     rows = Array.isArray(v) ? v : (v ? Object.keys(v).map(k=>v[k]) : []);
+    dataRev++;
+    renderFileList();
     renderTable();
+    if(ctrl.running) tickerBuild();      // xoá/thêm file lúc đang chạy → dựng lại ngay
   });
   db.ref(FB_PATH + "/khaithac").on("value", s => {
     ktMap = s.val() || {};
@@ -400,18 +480,24 @@ const tkHost = $("tkHost"), tkBar = $("tkBar"), tkTrack = $("tkTrack");
 let tkX = 0, tkRaf = null, tkPaused = false, tkLastTs = 0, tkBuiltKey = "";
 
 function tickerBuild(){
-  const list = (ctrl && db) ? null : null; // rows luôn đồng bộ từ Firebase khi chạy
-  const key = rows.length + "|" + (ctrl.prefix||"") + "|" + (ctrl.updatedAt||0);
+  const key = dataRev + "|" + rows.length + "|" + (ctrl.prefix||"") + "|" + (ctrl.updatedAt||0);
   if(key === tkBuiltKey) return;
   tkBuiltKey = key;
   let html = "";
   if(ctrl.prefix) html += '<span style="font-weight:800;opacity:.95">'+esc(ctrl.prefix)+'</span>';
+  let lastF = null;
   html += rows.map((r,i)=>{
+    let sep = "";
+    if(r.f && r.f !== lastF){            // vách ngăn giữa các file nối tiếp
+      lastF = r.f;
+      sep = '<span style="font-weight:800;opacity:.8">📁 '+esc(r.f)+'</span>';
+    }
     const parts = [];
+    if(r.daidien) parts.push("🧑‍💼 "+esc(r.daidien));
     if(r.ten) parts.push("👤 <b>"+esc(r.ten)+"</b>");
     if(r.dienthoai) parts.push("📞 "+esc(r.dienthoai));
     if(r.diachi) parts.push("📍 "+esc(r.diachi));
-    return '<span class="tk-chip" data-i="'+i+'"><span style="opacity:.6;font-size:.75em">'+(i+1)+'</span> '
+    return sep + '<span class="tk-chip" data-id="'+esc(r.id || i)+'"><span style="opacity:.6;font-size:.75em">'+(i+1)+'</span> '
          + parts.join(' <span class="tk-sep">|</span> ')
          + ' <span class="tk-note">KHAI THÁC</span></span>';
   }).join("");
@@ -421,7 +507,7 @@ function tickerBuild(){
 }
 function tickerRestyle(){
   tkTrack.querySelectorAll(".tk-chip").forEach(ch => {
-    ch.classList.toggle("kt", !!ktMap[ch.dataset.i]);
+    ch.classList.toggle("kt", !!ktMap[ch.dataset.id]);
   });
 }
 function tickerApplyStyle(){
@@ -461,8 +547,8 @@ tkBar.addEventListener("mouseleave", ()=> tkPaused = false);
 tkTrack.addEventListener("dblclick", e => {
   const chip = e.target.closest(".tk-chip");
   if(!chip || !db) return;
-  const i = chip.dataset.i;
-  db.ref(FB_PATH + "/khaithac/" + i).transaction(v => v ? null : true);
+  const id = chip.dataset.id;
+  db.ref(FB_PATH + "/khaithac/" + id).transaction(v => v ? null : true);
 });
 /* Nghe thay đổi style live khi đang chạy */
 setInterval(()=>{ if(ctrl.running){ tickerApplyStyle(); } }, 600);
