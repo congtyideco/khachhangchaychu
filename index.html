@@ -77,9 +77,16 @@
   tbody td{padding:9px 12px;border-bottom:1px solid #edf2f4;vertical-align:top}
   tbody tr:hover{background:#f6fafb}
   tbody tr.kt{background:#fdf6e6}
+  tbody tr.ok{background:#fdeceb}
+  tbody tr.tc{background:#eef1f3;color:#7a8790}
+  tbody tr.tc td b{text-decoration:line-through;text-decoration-thickness:2px;color:#8b979e}
   td.phone{font-family:var(--mono);font-size:13px;white-space:nowrap;color:var(--teal-d);font-weight:600}
   td.stt{font-family:var(--mono);color:#8ba0a8;font-size:12px}
   .badge-kt{display:inline-block;background:var(--amber);color:#fff;font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 8px;letter-spacing:.04em}
+  .badge-ok{display:inline-block;background:var(--red);color:#fff;font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 8px;letter-spacing:.04em}
+  .badge-tc{display:inline-block;background:#6e7a81;color:#fff;font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 8px;letter-spacing:.04em}
+  .badge-nv{display:block;font-size:11px;color:var(--ink2);margin-top:3px;font-weight:600}
+  .del-flag{display:inline-block;background:#fdecea;border:1px solid #f5c6c0;color:var(--red);font-size:10px;font-weight:800;border-radius:6px;padding:1px 6px;margin-top:3px;letter-spacing:.03em}
   .empty{padding:26px;text-align:center;color:var(--ink2);font-size:13.5px}
   .meta{margin-top:10px;font-size:12.5px;color:var(--ink2)}
   .meta b{color:var(--teal-d)}
@@ -118,6 +125,28 @@
   .tk-chip.kt{border-color:#ffb02e;background:rgba(255,176,46,.22);color:#ffd58a !important}
   .tk-chip .tk-note{display:none;background:#ffb02e;color:#3a2600;font-size:.68em;font-weight:800;border-radius:7px;padding:.15em .55em;letter-spacing:.05em}
   .tk-chip.kt .tk-note{display:inline-block}
+  .tk-chip.ok{border-color:#ff5a4e;background:rgba(230,55,45,.30);color:#ffb3ad !important}
+  .tk-chip.ok .tk-note{display:inline-block;background:#e6372d;color:#fff}
+  .tk-chip.tc{border-color:#8b979e;background:rgba(130,140,146,.30);color:#c3ccd1 !important;opacity:.82}
+  .tk-chip.tc .tk-note{display:inline-block;background:#6e7a81;color:#fff}
+  .tk-chip.tc b{text-decoration:line-through;text-decoration-thickness:2px}
+  /* Popup của ticker live trong admin (nhập tên NV + chọn trạng thái) */
+  #tkWrap{position:relative;width:100%;overflow:visible}
+  .tk-pop{position:absolute;bottom:calc(100% + 12px);left:50%;transform:translateX(-50%);display:none;background:#0e3a42;border:2px solid #ffb02e;border-radius:14px;padding:12px 14px;box-shadow:0 8px 28px rgba(0,0,0,.5);z-index:12;min-width:300px;max-width:92vw;font-family:'Segoe UI',system-ui,sans-serif}
+  .tk-pop.show{display:block}
+  .tk-pop::after{content:"";position:absolute;top:100%;left:50%;transform:translateX(-50%);border:9px solid transparent;border-top-color:#ffb02e}
+  .tk-pop .tp-t{color:#ffd58a;font-size:13px;font-weight:800;margin:0 0 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:360px;text-align:center}
+  .tk-pop .tp-row{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}
+  .tk-pop input{flex:1;min-width:0;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.35);border-radius:9px;color:#fff;font-size:15px;font-weight:600;padding:8px 10px;outline:none;font-family:inherit}
+  .tk-pop input:focus{border-color:#ffb02e;background:rgba(255,255,255,.16)}
+  .tk-pop input::placeholder{color:rgba(255,255,255,.45);font-weight:400}
+  .tk-pop .tp-row button{border:none;border-radius:9px;cursor:pointer;font-weight:800;font-size:14px;padding:9px 13px;line-height:1;font-family:inherit;transition:filter .15s;box-shadow:none}
+  .tk-pop .tp-row button:hover{filter:brightness(1.15);transform:none}
+  .tk-pop .tp-save{background:#ffb02e;color:#3a2600}
+  .tk-pop .tp-ok{background:#e6372d;color:#fff}
+  .tk-pop .tp-tc{background:#6e7a81;color:#fff}
+  .tk-pop .tp-undo{background:rgba(255,255,255,.14);color:#ffd58a;font-weight:700;font-size:12.5px}
+  .tk-pop .tp-x{background:rgba(255,255,255,.14);color:#fff}
   @media(max-width:640px){ header h1{font-size:15.5px} .card-b{padding:14px} }
 </style>
 </head>
@@ -233,7 +262,28 @@
 </main>
 
 <!-- Ticker live trong admin (đồng bộ y hệt các máy nhúng script) -->
-<div id="tkHost"><div id="tkBar"><div id="tkTrack"></div></div></div>
+<div id="tkHost"><div id="tkWrap">
+  <!-- Popup 1: nhập tên nhân viên (khung chưa khai thác) -->
+  <div class="tk-pop" id="tkPop1">
+    <div class="tp-t" id="tkPop1T"></div>
+    <div class="tp-row">
+      <input type="text" id="tkPop1I" maxlength="40" placeholder="Tên của bạn (VD: Ms Hương)">
+      <button class="tp-save" id="tkPop1OK">✔ Lưu</button>
+      <button class="tp-x" id="tkPop1NO">✕</button>
+    </div>
+  </div>
+  <!-- Popup 2: chọn kết quả liên hệ (khung đã khai thác) -->
+  <div class="tk-pop" id="tkPop2">
+    <div class="tp-t" id="tkPop2T"></div>
+    <div class="tp-row">
+      <button class="tp-ok" id="tkPop2OK">✔ Kết nối được</button>
+      <button class="tp-tc" id="tkPop2TC">✕ Từ chối</button>
+      <button class="tp-undo" id="tkPop2UN">↺ Hoàn tác</button>
+      <button class="tp-x" id="tkPop2X">Đóng</button>
+    </div>
+  </div>
+  <div id="tkBar"><div id="tkTrack"></div></div>
+</div></div>
 
 <div class="toast" id="toast"></div>
 
@@ -275,6 +325,18 @@ const norm = s => String(s ?? "").normalize("NFC").trim();
 const flat = s => norm(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d");
 const esc  = s => String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._x); t._x=setTimeout(()=>t.classList.remove("show"),2600); }
+
+/* Tên NV khai thác (hỗ trợ dữ liệu cũ: true / chuỗi tên) */
+function ktName(v){
+  if(!v || v === true) return "";
+  if(typeof v === "string") return v;
+  if(typeof v === "object" && v.name) return String(v.name);
+  return "";
+}
+/* Trạng thái: "" = khai thác (vàng), "ok" = kết nối được (đỏ), "tuchoi" = từ chối (xám, sẵn sàng xoá) */
+function ktStatus(v){
+  return (v && typeof v === "object" && v.status) ? String(v.status) : "";
+}
 
 let files = [];       // [{name, rows:[{id,daidien,ten,dienthoai,diachi,f}]}] — dữ liệu local theo từng file
 let rows = [];        // dữ liệu gộp (nối tiếp các file) hoặc từ Firebase
@@ -538,22 +600,33 @@ function renderTable(){
     return;
   }
   tb.innerHTML = pendHtml + rows.map((r,i)=>{
-    const kt = ktMap[r.id], sel = selSet.has(r.id);
-    return `<tr class="${kt?'kt':''}${sel?' selected':''}">
+    const v = ktMap[r.id], st = ktStatus(v), nv = ktName(v), sel = selSet.has(r.id);
+    const rowCls = st==="ok" ? "ok" : st==="tuchoi" ? "tc" : (v ? "kt" : "");
+    let ktCell;
+    if(st==="ok")          ktCell = '<span class="badge-ok">✔ KẾT NỐI ĐƯỢC</span>';
+    else if(st==="tuchoi") ktCell = '<span class="badge-tc">✕ TỪ CHỐI</span><span class="del-flag">🗑 SẴN SÀNG XOÁ</span>';
+    else if(v)             ktCell = '<span class="badge-kt">✔ KHAI THÁC</span>';
+    else                   ktCell = '<span style="color:#b3c2c8">—</span>';
+    if(nv && v) ktCell += '<span class="badge-nv">🧑‍💼 '+esc(nv)+'</span>';
+    return `<tr class="${rowCls}${sel?' selected':''}">
       <td class="stt">${i+1}</td>
       <td>${r.f ? '<span class="f-badge" title="'+esc(r.f)+'">📁 '+((r.fi??0)+1)+'</span>' : '<span style="color:#b3c2c8">—</span>'}</td>
       <td>${r.daidien ? '🧑‍💼 '+esc(r.daidien) : '<span style="color:#b3c2c8">—</span>'}</td>
       <td><b>${esc(r.ten)}</b></td>
       <td class="phone">${esc(r.dienthoai)}</td>
       <td>${esc(r.diachi)}</td>
-      <td>${kt?'<span class="badge-kt">✔ KHAI THÁC</span>':'<span style="color:#b3c2c8">—</span>'}</td>
+      <td>${ktCell}</td>
       <td class="sel-cell"><input type="checkbox" class="cbx row-sel" data-id="${esc(r.id||'')}" ${sel?'checked':''}></td>
     </tr>`;
   }).join("");
-  const ktCount = rows.filter(r=>ktMap[r.id]).length;
+  const ktCount = rows.filter(r=>ktMap[r.id] && !ktStatus(ktMap[r.id])).length;
+  const okCount = rows.filter(r=>ktStatus(ktMap[r.id])==="ok").length;
+  const tcCount = rows.filter(r=>ktStatus(ktMap[r.id])==="tuchoi").length;
   $("meta").innerHTML = "Tổng <b>"+rows.length+"</b> khách hàng"
     + (files.length ? " từ <b>"+files.length+"</b> file (chạy nối tiếp theo thứ tự)" : "")
-    + " · Đã khai thác: <b>"+ktCount+"</b>"
+    + " · Đang khai thác: <b style='color:var(--amber)'>"+ktCount+"</b>"
+    + " · Kết nối được: <b style='color:var(--red)'>"+okCount+"</b>"
+    + " · Từ chối (sẵn sàng xoá): <b style='color:#6e7a81'>"+tcCount+"</b>"
     + (pending.length ? ' · <b style="color:var(--green)">'+pending.length+' hàng mới chưa lưu</b>' : "");
   $("btnRun").disabled = !rows.length;
   refreshSelUI();
@@ -641,16 +714,25 @@ if(db){
     renderTable();
     if(ctrl.running) tickerBuild();      // xoá/thêm file lúc đang chạy → dựng lại ngay
   });
+  let prevTuChoi = new Set();          // ID đã "Từ chối" ở lần cập nhật trước
   db.ref(FB_PATH + "/khaithac").on("value", s => {
     ktMap = s.val() || {};
+    /* KH bị "Từ chối" → TỰ ĐỘNG TÍCH CHỌN trên bảng để sẵn sàng xoá;
+       hoàn tác / đổi trạng thái → tự bỏ chọn */
+    const nowTuChoi = new Set(Object.keys(ktMap).filter(id => ktStatus(ktMap[id]) === "tuchoi"));
+    let newlyFlagged = 0;
+    nowTuChoi.forEach(id => { if(!prevTuChoi.has(id)){ selSet.add(id); newlyFlagged++; } });
+    prevTuChoi.forEach(id => { if(!nowTuChoi.has(id)) selSet.delete(id); });
+    prevTuChoi = nowTuChoi;
     renderTable();
     tickerRestyle();
+    if(newlyFlagged) toast("✕ " + newlyFlagged + " khách hàng bị TỪ CHỐI — đã tự tích chọn, bấm 🗑 Xoá dòng đã chọn để loại khỏi danh sách");
   });
   db.ref(FB_PATH + "/control").on("value", s => {
     ctrl = s.val() || {};
     $("btnStop").disabled = !ctrl.running;
     $("runMeta").innerHTML = ctrl.running
-      ? '🟢 Ticker <b style="color:var(--green)">ĐANG CHẠY</b> — rê chuột vào thanh để tạm dừng, <b>lăn bánh xe hoặc kéo-rê để tua nhanh</b>, double-click khung khách hàng để đánh dấu Khai thác.'
+      ? '🟢 Ticker <b style="color:var(--green)">ĐANG CHẠY</b> — rê chuột vào thanh để tạm dừng, <b>lăn bánh xe hoặc kéo-rê để tua nhanh</b>. Double-click: khung trắng → nhập tên NV (VÀNG) · khung vàng → chọn <b style="color:var(--red)">✔ Kết nối được (ĐỎ)</b> / <b style="color:#6e7a81">✕ Từ chối (XÁM, tự tích chọn để xoá)</b>.'
       : '⚪ Ticker đang tắt.';
     if(ctrl.running) tickerStart(); else tickerStop();
   });
@@ -690,7 +772,16 @@ function tickerBuild(){
 }
 function tickerRestyle(){
   tkTrack.querySelectorAll(".tk-chip").forEach(ch => {
-    ch.classList.toggle("kt", !!ktMap[ch.dataset.id]);
+    const v = ktMap[ch.dataset.id], st = ktStatus(v);
+    ch.classList.toggle("kt", !!v && !st);
+    ch.classList.toggle("ok", st === "ok");
+    ch.classList.toggle("tc", st === "tuchoi");
+    const note = ch.querySelector(".tk-note");
+    if(note){
+      const n = ktName(v);
+      const label = st==="ok" ? "✔ KẾT NỐI ĐƯỢC" : st==="tuchoi" ? "✕ TỪ CHỐI" : "KHAI THÁC";
+      note.textContent = n ? (n + " - " + label) : label;
+    }
   });
 }
 function tickerApplyStyle(){
@@ -705,7 +796,7 @@ function tkLoop(ts){
   if(!tkLastTs) tkLastTs = ts;
   const dt = Math.min((ts - tkLastTs)/1000, .1);
   tkLastTs = ts;
-  if(!tkPaused){
+  if(!tkPaused && !tkPopOpen){
     tkX -= (ctrl.speed || 110) * dt;
     if(tkX < -tkTrack.scrollWidth) tkX = window.innerWidth;
     tkTrack.style.transform = "translate3d("+tkX+"px,-50%,0)";
@@ -720,12 +811,13 @@ function tickerStart(){
 }
 function tickerStop(){
   tkHost.style.display = "none";
+  tkClosePop();
   if(tkRaf){ cancelAnimationFrame(tkRaf); tkRaf = null; }
   tkBuiltKey = "";
 }
 /* Hover tạm dừng để double-click dễ dàng */
 tkBar.addEventListener("mouseenter", ()=> tkPaused = true);
-tkBar.addEventListener("mouseleave", ()=> tkPaused = false);
+tkBar.addEventListener("mouseleave", ()=> { if(!tkPopOpen) tkPaused = false; });
 /* Bánh xe chuột → tua nhanh tới/lui để tìm khách hàng cần khai thác
    (lăn xuống = tua tới, lăn lên = tua lui; giữ Shift lăn ngang cũng được) */
 tkBar.addEventListener("wheel", e => {
@@ -756,16 +848,99 @@ window.addEventListener("pointermove", e => {
 });
 window.addEventListener("pointerup", () => {
   if(tkDrag && tkDrag.moved){
-    setTimeout(()=>{ if(!tkBar.matches(":hover")) tkPaused = false; }, 120);
+    setTimeout(()=>{ if(!tkBar.matches(":hover") && !tkPopOpen) tkPaused = false; }, 120);
   }
   tkDrag = null;
 });
-/* Double-click khung KH → toggle "Khai thác" trên Firebase (mọi máy thấy ngay) */
+/* ============ DOUBLE-CLICK khung KH — luồng trạng thái (giống script nhúng) ============
+   Chưa khai thác → popup nhập tên NV → VÀNG
+   Đã khai thác   → popup "✔ Kết nối được" (ĐỎ) / "✕ Từ chối" (XÁM + tự tích chọn xoá) */
+const tkPop1 = $("tkPop1"), tkPop1T = $("tkPop1T"), tkPop1I = $("tkPop1I");
+const tkPop2 = $("tkPop2"), tkPop2T = $("tkPop2T");
+const TK_LS_NAME = "ideco_tickerKH_staffName";
+let tkPopOpen = false, tkPopTargetId = null;
+
+function tkChipTen(chip){ const b = chip.querySelector("b"); return b ? b.textContent : ""; }
+function tkClosePop(){
+  tkPopOpen = false; tkPopTargetId = null;
+  tkPop1.classList.remove("show"); tkPop2.classList.remove("show");
+  setTimeout(()=>{ if(!tkBar.matches(":hover")) tkPaused = false; }, 120);
+}
+function tkOpenPop1(id, chip){
+  tkPopTargetId = id; tkPopOpen = true; tkPaused = true;
+  tkPop2.classList.remove("show");
+  tkPop1T.textContent = "🔖 Khai thác: " + (tkChipTen(chip) || ("KH #" + id));
+  try{ tkPop1I.value = localStorage.getItem(TK_LS_NAME) || ""; }catch(e){ tkPop1I.value = ""; }
+  tkPop1.classList.add("show");
+  setTimeout(()=>{ tkPop1I.focus(); tkPop1I.select(); }, 30);
+}
+function tkOpenPop2(id, chip){
+  tkPopTargetId = id; tkPopOpen = true; tkPaused = true;
+  tkPop1.classList.remove("show");
+  const nv = ktName(ktMap[id]);
+  tkPop2T.textContent = "📞 " + (nv ? nv + " · " : "") + (tkChipTen(chip) || ("KH #" + id)) + " — kết quả liên hệ?";
+  tkPop2.classList.add("show");
+}
+function tkSaveName(){
+  const name = (tkPop1I.value || "").trim();
+  if(!name){ tkPop1I.focus(); return; }
+  try{ localStorage.setItem(TK_LS_NAME, name); }catch(e){}
+  if(db && tkPopTargetId != null){
+    db.ref(FB_PATH + "/khaithac/" + tkPopTargetId).set({
+      name: name, at: firebase.database.ServerValue.TIMESTAMP
+    });
+  }
+  tkClosePop();
+}
+function tkSetStatus(status){
+  if(!db || tkPopTargetId == null) return tkClosePop();
+  const v = ktMap[tkPopTargetId];
+  const obj = { status: status, statusAt: firebase.database.ServerValue.TIMESTAMP };
+  const n = ktName(v); if(n) obj.name = n;
+  if(v && typeof v === "object" && v.at) obj.at = v.at;
+  db.ref(FB_PATH + "/khaithac/" + tkPopTargetId).set(obj);
+  tkClosePop();
+}
+$("tkPop1OK").addEventListener("click", tkSaveName);
+$("tkPop1NO").addEventListener("click", tkClosePop);
+tkPop1I.addEventListener("keydown", e => {
+  if(e.key === "Enter"){ e.preventDefault(); tkSaveName(); }
+  if(e.key === "Escape"){ e.preventDefault(); tkClosePop(); }
+});
+$("tkPop2OK").addEventListener("click", ()=> tkSetStatus("ok"));
+$("tkPop2TC").addEventListener("click", ()=> tkSetStatus("tuchoi"));
+$("tkPop2UN").addEventListener("click", ()=>{
+  if(db && tkPopTargetId != null) db.ref(FB_PATH + "/khaithac/" + tkPopTargetId).remove();
+  tkClosePop();
+});
+$("tkPop2X").addEventListener("click", tkClosePop);
+
+function tkChipActivate(chip){
+  if(!db) return;
+  const id = chip.dataset.id;
+  if(ktMap[id]) tkOpenPop2(id, chip);
+  else          tkOpenPop1(id, chip);
+}
+/* Tự phát hiện double-click (2 lần nhấn < 450ms) — ổn định cả chuột lẫn cảm ứng */
+let tkLastTapId = null, tkLastTapAt = 0;
+tkTrack.addEventListener("click", e => {
+  if(tkDrag && tkDrag.moved) return;
+  const chip = e.target.closest(".tk-chip");
+  if(!chip) return;
+  const id = chip.dataset.id, now = Date.now();
+  if(id === tkLastTapId && (now - tkLastTapAt) < 450){
+    tkLastTapId = null; tkLastTapAt = 0;
+    tkChipActivate(chip);
+  } else {
+    tkLastTapId = id; tkLastTapAt = now;
+  }
+});
 tkTrack.addEventListener("dblclick", e => {
   const chip = e.target.closest(".tk-chip");
-  if(!chip || !db) return;
-  const id = chip.dataset.id;
-  db.ref(FB_PATH + "/khaithac/" + id).transaction(v => v ? null : true);
+  if(!chip) return;
+  e.preventDefault();
+  if(Date.now() - tkLastTapAt < 60) return;
+  tkChipActivate(chip);
 });
 /* Nghe thay đổi style live khi đang chạy */
 setInterval(()=>{ if(ctrl.running){ tickerApplyStyle(); } }, 600);
