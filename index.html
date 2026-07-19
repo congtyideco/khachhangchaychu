@@ -558,6 +558,9 @@ $("btnSaveFB").addEventListener("click", async () => {
 $("btnDelSel").addEventListener("click", async () => {
   if(!selSet.size) return;
   if(!confirm("Xoá " + selSet.size + " dòng khách hàng đã chọn khỏi bảng chạy chữ?")) return;
+  /* ★ v6: cảnh báo nếu trong số dòng xoá có KH ĐÃ KẾT NỐI ĐƯỢC */
+  const okSel = [...selSet].filter(id => ktMap[id] && typeof ktMap[id]==="object" && ktMap[id].status==="ok");
+  if(okSel.length && !confirm("⚠️ Có " + okSel.length + " dòng là khách hàng ĐÃ KẾT NỐI ĐƯỢC.\nXoá sẽ mất cả đánh dấu kết nối. Vẫn tiếp tục?")) return;
   materializeRemote();
   const removed = [...selSet];
   files.forEach(f => f.rows = f.rows.filter(r => !selSet.has(r.id)));
@@ -664,9 +667,11 @@ $("btnRun").addEventListener("click", async () => {
   if(!db) return toast("❌ Chưa kết nối Firebase");
   if(!rows.length) return toast("⚠️ Chưa có dữ liệu");
   try{
-    await db.ref(FB_PATH).set({
+    /* ★ v6: KHÔNG xoá khaithac khi bấm Chạy — đánh dấu KHAI THÁC /
+       KẾT NỐI ĐƯỢC được GIỮ NGUYÊN tuyệt đối. Muốn xoá đánh dấu phải
+       bấm nút "↺ Xoá đánh dấu Khai thác" (có xác nhận riêng).        */
+    await db.ref(FB_PATH).update({
       data: rows,
-      khaithac: null,                     // phiên mới → xoá đánh dấu cũ
       control: Object.assign(readSettings(), {
         running: true,
         updatedAt: firebase.database.ServerValue.TIMESTAMP
@@ -686,7 +691,19 @@ $("btnStop").addEventListener("click", async () => {
 $("btnResetKT").addEventListener("click", async () => {
   if(!db) return;
   if(!confirm("Xoá toàn bộ đánh dấu 'Khai thác' hiện tại?")) return;
-  try{ await db.ref(FB_PATH + "/khaithac").remove(); toast("↺ Đã xoá đánh dấu Khai thác"); }
+  /* ★ v6: bảo vệ KH ĐÃ KẾT NỐI — hỏi thêm trước khi xoá luôn các khung đỏ */
+  const okIds = Object.keys(ktMap).filter(id => ktMap[id] && typeof ktMap[id]==="object" && ktMap[id].status==="ok");
+  try{
+    if(okIds.length && confirm("Có " + okIds.length + " khách hàng ĐÃ KẾT NỐI ĐƯỢC (màu đỏ).\n\nBấm OK để GIỮ LẠI các khách này (chỉ xoá đánh dấu vàng/xám).\nBấm Cancel để xoá sạch toàn bộ.")){
+      const upd = {};
+      Object.keys(ktMap).forEach(id => { if(okIds.indexOf(id) === -1) upd[id] = null; });
+      await db.ref(FB_PATH + "/khaithac").update(upd);
+      toast("↺ Đã xoá đánh dấu — giữ lại " + okIds.length + " KH đã kết nối");
+    } else {
+      await db.ref(FB_PATH + "/khaithac").remove();
+      toast("↺ Đã xoá đánh dấu Khai thác");
+    }
+  }
   catch(e){ toast("❌ " + e.message); }
 });
 
@@ -895,6 +912,10 @@ function tkSaveName(){
 function tkSetStatus(status){
   if(!db || tkPopTargetId == null) return tkClosePop();
   const v = ktMap[tkPopTargetId];
+  /* ★ v6: KH đã KẾT NỐI ĐƯỢC → đổi trạng thái phải xác nhận, tránh mất */
+  if(v && typeof v === "object" && v.status === "ok" && status !== "ok"){
+    if(!confirm("Khách hàng này ĐÃ KẾT NỐI ĐƯỢC. Bạn chắc chắn muốn đổi sang trạng thái khác?")) { tkClosePop(); return; }
+  }
   const obj = { status: status, statusAt: firebase.database.ServerValue.TIMESTAMP };
   const n = ktName(v); if(n) obj.name = n;
   if(v && typeof v === "object" && v.at) obj.at = v.at;
@@ -910,7 +931,15 @@ tkPop1I.addEventListener("keydown", e => {
 $("tkPop2OK").addEventListener("click", ()=> tkSetStatus("ok"));
 $("tkPop2TC").addEventListener("click", ()=> tkSetStatus("tuchoi"));
 $("tkPop2UN").addEventListener("click", ()=>{
-  if(db && tkPopTargetId != null) db.ref(FB_PATH + "/khaithac/" + tkPopTargetId).remove();
+  if(db && tkPopTargetId != null){
+    const v = ktMap[tkPopTargetId];
+    /* ★ v6: hoàn tác trên KH đã kết nối → phải xác nhận */
+    if(v && typeof v === "object" && v.status === "ok" &&
+       !confirm("Khách hàng này ĐÃ KẾT NỐI ĐƯỢC. Hoàn tác sẽ xoá đánh dấu kết nối. Tiếp tục?")){
+      tkClosePop(); return;
+    }
+    db.ref(FB_PATH + "/khaithac/" + tkPopTargetId).remove();
+  }
   tkClosePop();
 });
 $("tkPop2X").addEventListener("click", tkClosePop);
