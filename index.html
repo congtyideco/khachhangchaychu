@@ -360,6 +360,10 @@ drop.addEventListener("drop", e => readFiles(e.dataTransfer.files));
 fi.addEventListener("change", () => { readFiles(fi.files); fi.value=""; });
 
 function readFiles(list){
+  /* ★ AN TOÀN DỮ LIỆU: trước khi thêm file mới, biến dữ liệu cũ đang
+     phát (từ Firebase, chưa có trong files[]) thành các "file thật" để
+     NỐI TIẾP — không bao giờ ghi đè/mất dữ liệu + trạng thái cũ. */
+  materializeRemote();
   Array.from(list || []).forEach(file => {
     const rd = new FileReader();
     rd.onload = e => {
@@ -370,7 +374,7 @@ function readFiles(list){
         if(!parsed.length){ toast("⚠️ " + file.name + ": không tìm thấy dòng dữ liệu"); return; }
         files.push({ name: file.name, rows: parsed });
         combine(true);
-        toast("✅ " + file.name + " · " + parsed.length + " KH — tổng " + rows.length + " khách hàng");
+        toast("✅ " + file.name + " · " + parsed.length + " KH — nối tiếp, tổng " + rows.length + " khách hàng");
       }catch(err){ toast("❌ " + file.name + ": " + err.message); }
     };
     rd.readAsArrayBuffer(file);
@@ -475,11 +479,18 @@ function normPhone(v){
    chuyển nó thành 1 "file ảo" để mọi thao tác sửa/xoá đều nhất quán */
 function materializeRemote(){
   if(files.length || !rows.length) return;
-  files = [{ name: "(dữ liệu đang phát)", rows: rows.map(r => {
+  /* ★ Khôi phục CHÍNH XÁC từng file theo tên đã lưu ở mỗi dòng (r.f),
+     giữ đúng thứ tự xuất hiện → tên file không bị mất khi mở lại admin,
+     và mọi trạng thái khai thác/kết nối theo ID vẫn dính nguyên vẹn. */
+  const order = [], byName = {};
+  rows.forEach(r => {
     const c = Object.assign({}, r); delete c.fi;
     if(!c.id) c.id = newId();
-    return c;
-  })}];
+    const nm = c.f || "(dữ liệu đang phát)";
+    if(!byName[nm]){ byName[nm] = { name: nm, rows: [] }; order.push(nm); }
+    byName[nm].rows.push(c);
+  });
+  files = order.map(nm => byName[nm]);
 }
 
 function refreshSelUI(){
@@ -726,6 +737,10 @@ if(db){
     remoteHasData = !!v;
     if(dirtyLocal) return;               // đang soạn file mới local, không ghi đè
     rows = Array.isArray(v) ? v : (v ? Object.keys(v).map(k=>v[k]) : []);
+    /* ★ Mở lại admin: dựng lại danh sách file (chip tên file) từ dữ liệu
+       remote, dựa trên tên file đã lưu ở mỗi dòng → KHÔNG mất tên file. */
+    files = [];
+    if(rows.length) materializeRemote();
     dataRev++;
     renderFileList();
     renderTable();
