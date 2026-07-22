@@ -296,6 +296,12 @@
         <button class="btn-amber" id="btnResetKT">↺ Xoá đánh dấu Khai thác</button>
         <button class="btn-ghost" id="btnClear">🗑 Xoá dữ liệu</button>
       </div>
+      <div class="ctrl-row" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d7e6e8">
+        <span style="font-size:13px;font-weight:700;color:var(--teal-d)">📡 Phát riêng theo khu vực:</span>
+        <select id="bcRegion" style="padding:9px 12px;border:1.5px solid #cfe3e5;border-radius:9px;font-size:13px;font-family:inherit;background:#fff;cursor:pointer;max-width:230px"><option value="">🌐 Tất cả khu vực (mặc định)</option></select>
+        <button class="btn-run" id="btnBcRegion" style="background:#2da6b2">📡 Phát khu vực này</button>
+        <span class="tb-hint" id="bcInfo" style="margin-left:0"></span>
+      </div>
       <div class="meta" id="runMeta"></div>
     </div>
   </section>
@@ -816,6 +822,7 @@ function rebuildFilterOptions(){
   };
   fill($("fRegion"), regions, "🗺 Tất cả khu vực");
   fill($("fPhone"),  phones,  "📞 Tất cả đầu số");
+  if($("bcRegion")) fill($("bcRegion"), regions, "🌐 Tất cả khu vực (mặc định)");
 }
 /* Trả về danh sách rows đã lọc + gắn chỉ số gốc để STT/định vị đúng */
 function getFilteredRows(){
@@ -944,7 +951,8 @@ function readSettings(){
     bottomOffset: +$("bottomOffset").value,
     color: $("txtColor").value,
     bg: $("bgColor").value,
-    prefix: norm($("prefix").value)
+    prefix: norm($("prefix").value),
+    region: ($("bcRegion") && $("bcRegion").value) || ""   /* ★ v9: khu vực admin phát */
   };
 }
 function refreshLabels(){
@@ -987,6 +995,19 @@ $("btnStop").addEventListener("click", async () => {
   if(!db) return;
   try{ await db.ref(FB_PATH + "/control/running").set(false); toast("⏹ Đã dừng ticker trên mọi máy"); }
   catch(e){ toast("❌ " + e.message); }
+});
+
+/* ★ v9: Phát riêng theo khu vực — ghi ctrl.region lên Firebase, mọi máy lọc theo */
+$("btnBcRegion").addEventListener("click", async () => {
+  if(!db) return toast("❌ Chưa kết nối Firebase");
+  const rg = ($("bcRegion").value || "").trim();
+  try{
+    await db.ref(FB_PATH + "/control").update({
+      region: rg || null,
+      updatedAt: firebase.database.ServerValue.TIMESTAMP
+    });
+    toast(rg ? ("📡 Đang phát riêng khu vực: " + rg + " tới mọi máy") : "🌐 Đã phát TẤT CẢ khu vực (bỏ lọc)");
+  }catch(e){ toast("❌ " + e.message); }
 });
 
 $("btnResetKT").addEventListener("click", async () => {
@@ -1053,6 +1074,14 @@ if(db){
   db.ref(FB_PATH + "/control").on("value", s => {
     ctrl = s.val() || {};
     $("btnStop").disabled = !ctrl.running;
+    /* ★ v9: phản ánh khu vực đang phát */
+    if($("bcRegion") && document.activeElement !== $("bcRegion")){
+      const rg = ctrl.region || "";
+      if([...$("bcRegion").options].some(o=>o.value===rg)) $("bcRegion").value = rg;
+    }
+    if($("bcInfo")) $("bcInfo").innerHTML = ctrl.region
+      ? '📡 Đang phát riêng: <b style="color:var(--teal-d)">'+esc(ctrl.region)+'</b>'
+      : '🌐 Đang phát tất cả khu vực';
     $("runMeta").innerHTML = ctrl.running
       ? '🟢 Ticker <b style="color:var(--green)">ĐANG CHẠY</b> — rê chuột vào thanh để tạm dừng, <b>lăn bánh xe hoặc kéo-rê để tua nhanh</b>. Double-click: khung trắng → nhập tên NV (VÀNG) · khung vàng → chọn <b style="color:var(--red)">✔ Kết nối được (ĐỎ)</b> / <b style="color:#6e7a81">✕ Từ chối (XÁM, tự tích chọn để xoá)</b>.'
       : '⚪ Ticker đang tắt.';
@@ -1067,13 +1096,16 @@ const tkHost = $("tkHost"), tkBar = $("tkBar"), tkTrack = $("tkTrack");
 let tkX = 0, tkRaf = null, tkPaused = false, tkLastTs = 0, tkBuiltKey = "";
 
 function tickerBuild(){
-  const key = dataRev + "|" + rows.length + "|" + (ctrl.prefix||"") + "|" + (ctrl.updatedAt||0);
+  const rg = ctrl.region || "";
+  const key = dataRev + "|" + rows.length + "|" + (ctrl.prefix||"") + "|" + (ctrl.updatedAt||0) + "|R:" + rg;
   if(key === tkBuiltKey) return;
   tkBuiltKey = key;
   let html = "";
   if(ctrl.prefix) html += '<span style="font-weight:800;opacity:.95">'+esc(ctrl.prefix)+'</span>';
-  let lastF = null;
-  html += rows.map((r,i)=>{
+  if(rg) html += '<span style="font-weight:800;background:#3ad6a5;color:#04321f;border-radius:8px;padding:2px 10px">🗺 '+esc(rg)+'</span>';
+  let lastF = null, n = 0;
+  const list = rg ? rows.filter(r => extractRegion(r.diachi) === rg) : rows;
+  html += list.map((r,i)=>{
     let sep = "";
     if(r.f && r.f !== lastF){            // vách ngăn giữa các file nối tiếp
       lastF = r.f;
