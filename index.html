@@ -60,6 +60,29 @@
   .btn-delsel{background:#fdecea;border:1px solid #f5c6c0;color:var(--red)}
   .btn-delsel:not(:disabled):hover{background:#fadbd7}
   .tb-hint{font-size:12px;color:var(--ink2);margin-left:auto}
+  /* ---- Thanh tìm kiếm & lọc ---- */
+  .filter-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;padding:12px;background:#f4fafb;border:1px solid #dcebed;border-radius:11px}
+  .filter-bar .fsearch{flex:1 1 260px;min-width:220px;position:relative}
+  .filter-bar .fsearch input{width:100%;padding:10px 34px 10px 34px;border:1.5px solid #cfe3e5;border-radius:9px;font-size:13.5px;font-family:inherit;background:#fff}
+  .filter-bar .fsearch input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(45,166,178,.15)}
+  .filter-bar .fsearch .ico{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--ink2);pointer-events:none}
+  .filter-bar .fsearch .clr{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:none;background:#e3eff0;color:var(--ink2);width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:12px;line-height:1;padding:0;display:none}
+  .filter-bar .fsearch .clr.show{display:block}
+  .filter-bar select{padding:10px 12px;border:1.5px solid #cfe3e5;border-radius:9px;font-size:13px;font-family:inherit;background:#fff;color:var(--ink);cursor:pointer;max-width:220px}
+  .filter-bar select:focus{outline:none;border-color:var(--teal)}
+  .filter-bar .fclear{padding:9px 13px;border:1px solid #e0d3b8;background:#fdf6e6;color:#8a6d1e;border-radius:9px;font-size:12.5px;cursor:pointer;font-family:inherit}
+  .filter-bar .fclear:hover{background:#f9edcf}
+  .filter-info{font-size:12.5px;color:var(--teal-d);font-weight:700;margin-left:auto;white-space:nowrap}
+  /* ---- Sửa inline ô dữ liệu ---- */
+  td.editable{cursor:text;position:relative}
+  td.editable:hover{background:#eefaf0;box-shadow:inset 0 0 0 1.5px #b7e2c4}
+  td.editable .edit-hint{opacity:0;position:absolute;right:5px;top:3px;font-size:9.5px;color:var(--teal);transition:.15s}
+  td.editable:hover .edit-hint{opacity:.8}
+  td.editing{background:#fff !important;box-shadow:inset 0 0 0 2px var(--green)}
+  td.editing input{width:100%;padding:6px 8px;border:none;font-size:13.5px;font-family:inherit;background:transparent;color:var(--ink)}
+  td.editing input:focus{outline:none}
+  tr.dim{opacity:.32}
+  mark.hl{background:#ffe9a8;color:inherit;border-radius:3px;padding:0 1px}
   .cbx{width:17px;height:17px;accent-color:var(--teal);cursor:pointer;vertical-align:middle}
   td.sel-cell{text-align:center}
   tr.selected{background:#e8f4f5 !important}
@@ -205,6 +228,24 @@
   <section class="card">
     <div class="card-h"><span class="num">B2</span><h2>Bảng dữ liệu khách hàng</h2><span class="hint">Cột "Khai thác" cập nhật realtime khi nhân viên double-click trên ticker</span></div>
     <div class="card-b">
+      <div class="filter-bar">
+        <div class="fsearch">
+          <span class="ico">🔍</span>
+          <input type="text" id="fSearch" placeholder="Tìm: tên công ty · người đại diện · SĐT · địa chỉ…" autocomplete="off">
+          <button class="clr" id="fSearchClr" title="Xoá tìm kiếm">✕</button>
+        </div>
+        <select id="fRegion" title="Lọc theo khu vực (tỉnh/thành trích từ địa chỉ)"><option value="">🗺 Tất cả khu vực</option></select>
+        <select id="fPhone" title="Lọc theo nhóm đầu số điện thoại"><option value="">📞 Tất cả đầu số</option></select>
+        <select id="fStatus" title="Lọc theo trạng thái khai thác">
+          <option value="">🏷 Tất cả trạng thái</option>
+          <option value="none">⚪ Chưa khai thác</option>
+          <option value="kt">🟡 Đang khai thác</option>
+          <option value="ok">🔴 Kết nối được</option>
+          <option value="tuchoi">⚫ Từ chối</option>
+        </select>
+        <button class="fclear" id="fClearAll" title="Xoá mọi bộ lọc">↺ Bỏ lọc</button>
+        <span class="filter-info" id="fInfo"></span>
+      </div>
       <div class="tbl-toolbar">
         <button class="btn-add" id="btnAddRow">➕ Thêm thủ công</button>
         <button class="btn-save" id="btnSaveFB" style="display:none">💾 Lưu Firebase (<span id="pendCount">0</span>)</button>
@@ -568,19 +609,24 @@ function refreshSelUI(){
   selSet.forEach(id => { if(!alive.has(id)) selSet.delete(id); });
   $("selCount").textContent = selSet.size;
   $("btnDelSel").disabled = !selSet.size;
+  /* checkbox "chọn tất cả" phản ánh riêng các dòng ĐANG HIỂN THỊ (theo bộ lọc) */
+  const visIds = getFilteredRows().map(({r})=>r.id);
+  const visSel = visIds.filter(id => selSet.has(id)).length;
   const all = $("selAll");
-  all.checked = rows.length > 0 && selSet.size === rows.length;
-  all.indeterminate = selSet.size > 0 && selSet.size < rows.length;
+  all.checked = visIds.length > 0 && visSel === visIds.length;
+  all.indeterminate = visSel > 0 && visSel < visIds.length;
   $("pendCount").textContent = pending.length;
   $("btnSaveFB").style.display = pending.length ? "inline-flex" : "none";
   $("tbHint").textContent = selSet.size
-    ? "Đã chọn " + selSet.size + " dòng"
+    ? "Đã chọn " + selSet.size + " dòng" + (isFiltering() ? " (có thể ngoài bộ lọc hiện tại)" : "")
     : (pending.length ? "Điền thông tin rồi bấm 💾 Lưu Firebase" : "");
 }
 
-/* Chọn tất cả / bỏ chọn (header) */
+/* Chọn tất cả / bỏ chọn (header) — chỉ tác động các dòng đang hiển thị theo bộ lọc */
 $("selAll").addEventListener("change", e => {
-  selSet = e.target.checked ? new Set(rows.map(r=>r.id)) : new Set();
+  const visIds = getFilteredRows().map(({r})=>r.id);
+  if(e.target.checked) visIds.forEach(id => selSet.add(id));
+  else                 visIds.forEach(id => selSet.delete(id));
   renderTable();
 });
 
@@ -599,8 +645,57 @@ $("tbody").addEventListener("input", e => {
 });
 $("tbody").addEventListener("click", e => {
   const del = e.target.closest("[data-pdel]");
-  if(del){ pending.splice(+del.dataset.pdel, 1); renderTable(); }
+  if(del){ pending.splice(+del.dataset.pdel, 1); renderTable(); return; }
+  /* ---- Sửa inline: click vào ô editable → mở input ---- */
+  const cell = e.target.closest("td.editable");
+  if(cell && !cell.classList.contains("editing")) openCellEdit(cell);
 });
+
+/* Mở ô sửa inline */
+function openCellEdit(cell){
+  if(editingCell) return;                     // mỗi lần chỉ sửa 1 ô
+  const id = cell.dataset.id, k = cell.dataset.k;
+  const r = rows.find(x => x.id === id);
+  if(!r) return;
+  editingCell = cell;
+  const cur = r[k] || "";
+  cell.classList.add("editing");
+  cell.innerHTML = '<input type="text" value="'+esc(cur)+'"'+(k==="dienthoai"?' inputmode="tel"':'')+'>';
+  const inp = cell.querySelector("input");
+  inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length);
+  const commit = save => {
+    if(editingCell !== cell) return;
+    editingCell = null;
+    if(save){ const nv = k==="dienthoai" ? normPhone(inp.value) : norm(inp.value);
+              if(nv !== (r[k]||"")) { saveCellEdit(id, k, nv); return; } }
+    renderTable();                            // huỷ hoặc không đổi → vẽ lại như cũ
+  };
+  inp.addEventListener("keydown", ev => {
+    if(ev.key==="Enter"){ ev.preventDefault(); commit(true); }
+    else if(ev.key==="Escape"){ ev.preventDefault(); commit(false); }
+  });
+  inp.addEventListener("blur", () => commit(true));
+}
+
+/* Ghi giá trị đã sửa vào files[] (giữ ID/trạng thái) rồi đồng bộ Firebase */
+async function saveCellEdit(id, k, val){
+  materializeRemote();
+  let hit = false;
+  files.forEach(f => f.rows.forEach(row => { if(row.id === id){ row[k] = val; hit = true; } }));
+  if(!hit){ renderTable(); return; }
+  combine(false);
+  if(db && (ctrl.running || remoteHasData)){
+    try{
+      await db.ref(FB_PATH + "/data").set(rows);
+      dirtyLocal = false; remoteHasData = true;
+      if(ctrl.running) tickerBuild();
+      toast("✏️ Đã sửa & đồng bộ" + (ctrl.running ? " — ticker cập nhật ngay" : ""));
+    }catch(err){ toast("❌ Lỗi lưu: " + err.message); }
+  } else {
+    dirtyLocal = true;
+    toast("✏️ Đã sửa (bấm ▶ CHẠY hoặc dữ liệu sẽ đồng bộ khi phát)");
+  }
+}
 
 /* ➕ Thêm thủ công → xuất hiện hàng nhập mới ghim đầu bảng */
 $("btnAddRow").addEventListener("click", () => {
@@ -662,8 +757,115 @@ $("btnDelSel").addEventListener("click", async () => {
 });
 
 /* ---------- Bảng dữ liệu ---------- */
+/* ================================================================
+   TÌM KIẾM · LỌC KHU VỰC · LỌC ĐẦU SỐ · LỌC TRẠNG THÁI
+================================================================ */
+let flt = { q:"", region:"", phone:"", status:"" };
+let editingCell = null, pendingRerender = false;
+
+/* Trích tỉnh/thành từ địa chỉ (phần cuối sau dấu phẩy, chuẩn hoá vài tên phổ biến) */
+const PROV_ALIAS = {
+  "tphcm":"TP.HCM","tp hcm":"TP.HCM","ho chi minh":"TP.HCM","hcm":"TP.HCM","sai gon":"TP.HCM","saigon":"TP.HCM",
+  "ha noi":"Hà Nội","hanoi":"Hà Nội","hn":"Hà Nội",
+  "da nang":"Đà Nẵng","dn":"Đà Nẵng"
+};
+const titleCaseVi = s => s.toLowerCase().split(/\s+/).map(w => w ? w[0].toUpperCase()+w.slice(1) : w).join(" ");
+function extractRegion(addr){
+  const s = norm(addr);
+  if(!s) return "";
+  const parts = s.split(",").map(x=>x.trim()).filter(Boolean);
+  // Lấy phần cuối; nếu phần cuối chỉ là "Qx"/"Px" (quận/phường) thì lùi về phần trước có tên tỉnh/thành
+  let tail = parts[parts.length-1] || s;
+  const isDistrictOnly = t => /^(q|p|quan|phuong)\.?\s*\d+[a-z]?$/i.test(flat(t));
+  if(isDistrictOnly(tail) && parts.length >= 2) tail = parts[parts.length-2];
+  tail = tail.replace(/^(tp\.?|thanh pho|tinh|t\.)\s*/i,"").trim();
+  const key = flat(tail);
+  for(const k in PROV_ALIAS){ if(key === k || key.includes(k)) return PROV_ALIAS[k]; }
+  return titleCaseVi(tail);
+}
+/* Nhóm đầu số điện thoại VN (di động: 03x/05x/07x/08x/09x; cố định: đầu 02x theo tỉnh) */
+function phoneGroup(dt){
+  const s = String(dt||"").replace(/[^\d]/g,"");
+  if(!s) return "";
+  if(/^0?(3[2-9])/.test(s)) return "03x (Viettel)";
+  if(/^0?(5[6-9])/.test(s)) return "05x (Vietnamobile)";
+  if(/^0?(7[0-9])/.test(s)) return "07x (Mobifone)";
+  if(/^0?(8[1-9])/.test(s)) return "08x (Vinaphone)";
+  if(/^0?(9[0-9])/.test(s)) return "09x (Viettel/Mobi/Vina)";
+  if(/^0?2\d/.test(s))      return "02x (Cố định)";
+  return "Khác";
+}
+function rowStatus(r){
+  const st = ktStatus(ktMap[r.id]);
+  if(st==="ok"||st==="tuchoi") return st;
+  return ktMap[r.id] ? "kt" : "none";
+}
+/* Cập nhật các option khu vực & đầu số theo dữ liệu hiện có */
+function rebuildFilterOptions(){
+  const regions = new Map(), phones = new Map();
+  rows.forEach(r=>{
+    const rg = extractRegion(r.diachi); if(rg) regions.set(rg,(regions.get(rg)||0)+1);
+    const pg = phoneGroup(r.dienthoai); if(pg) phones.set(pg,(phones.get(pg)||0)+1);
+  });
+  const fill = (sel, map, prefix) => {
+    const cur = sel.value;
+    const opts = [...map.entries()].sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0],'vi'));
+    sel.innerHTML = '<option value="">'+prefix+'</option>' +
+      opts.map(([k,c])=>'<option value="'+esc(k)+'">'+esc(k)+' ('+c+')</option>').join("");
+    if([...map.keys()].includes(cur)) sel.value = cur; else if(cur){ sel.value=""; }
+  };
+  fill($("fRegion"), regions, "🗺 Tất cả khu vực");
+  fill($("fPhone"),  phones,  "📞 Tất cả đầu số");
+}
+/* Trả về danh sách rows đã lọc + gắn chỉ số gốc để STT/định vị đúng */
+function getFilteredRows(){
+  const q = flat(flt.q);
+  return rows.map((r,idx)=>({r,idx})).filter(({r})=>{
+    if(flt.region && extractRegion(r.diachi) !== flt.region) return false;
+    if(flt.phone  && phoneGroup(r.dienthoai) !== flt.phone)  return false;
+    if(flt.status && rowStatus(r) !== flt.status)            return false;
+    if(q){
+      const hay = flat([r.ten, r.daidien, r.dienthoai, r.diachi, ktName(ktMap[r.id])].join(" "));
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+function hlMark(text, q){
+  const s = String(text==null?"":text);
+  if(!q) return esc(s);
+  const fs = flat(s), fq = flat(q);
+  const at = fs.indexOf(fq);
+  if(at<0) return esc(s);
+  return esc(s.slice(0,at)) + '<mark class="hl">' + esc(s.slice(at,at+q.length)) + '</mark>' + esc(s.slice(at+q.length));
+}
+const isFiltering = () => !!(flt.q || flt.region || flt.phone || flt.status);
+
+/* Sự kiện thanh lọc */
+function bindFilters(){
+  const si = $("fSearch"), clr = $("fSearchClr");
+  si.addEventListener("input", () => {
+    flt.q = si.value;
+    clr.classList.toggle("show", !!si.value);
+    renderTable();
+  });
+  clr.addEventListener("click", () => { si.value=""; flt.q=""; clr.classList.remove("show"); renderTable(); si.focus(); });
+  $("fRegion").addEventListener("change", e => { flt.region = e.target.value; renderTable(); });
+  $("fPhone").addEventListener("change",  e => { flt.phone  = e.target.value; renderTable(); });
+  $("fStatus").addEventListener("change", e => { flt.status = e.target.value; renderTable(); });
+  $("fClearAll").addEventListener("click", () => {
+    flt = { q:"", region:"", phone:"", status:"" };
+    si.value=""; clr.classList.remove("show");
+    $("fRegion").value=""; $("fPhone").value=""; $("fStatus").value="";
+    renderTable();
+  });
+}
+
 function renderTable(){
+  if(editingCell){ pendingRerender = true; return; }   // đang sửa inline → hoãn vẽ lại, tránh mất ô nhập
+  pendingRerender = false;
   const tb = $("tbody");
+  rebuildFilterOptions();
   const pendHtml = pending.map((p,i)=>`<tr class="new-row">
       <td><span class="new-tag">MỚI</span></td>
       <td><span class="f-badge">✍️</span></td>
@@ -682,7 +884,17 @@ function renderTable(){
     refreshSelUI();
     return;
   }
-  tb.innerHTML = pendHtml + rows.map((r,i)=>{
+  const q = flt.q;
+  const view = getFilteredRows();
+  if(!view.length && !pending.length){
+    tb.innerHTML = '<tr><td colspan="8"><div class="empty">🔍 Không có khách hàng nào khớp bộ lọc hiện tại. Bấm <b>↺ Bỏ lọc</b> để xem lại toàn bộ.</div></td></tr>';
+    updateFilterInfo(0);
+    $("btnRun").disabled = !rows.length;
+    refreshSelUI();
+    return;
+  }
+  tb.innerHTML = pendHtml + view.map(({r,idx})=>{
+    const i = idx;
     const v = ktMap[r.id], st = ktStatus(v), nv = ktName(v), sel = selSet.has(r.id);
     const rowCls = st==="ok" ? "ok" : st==="tuchoi" ? "tc" : (v ? "kt" : "");
     let ktCell;
@@ -691,13 +903,14 @@ function renderTable(){
     else if(v)             ktCell = '<span class="badge-kt">✔ KHAI THÁC</span>';
     else                   ktCell = '<span style="color:#b3c2c8">—</span>';
     if(nv && v) ktCell += '<span class="badge-nv">🧑‍💼 '+esc(nv)+'</span>';
-    return `<tr class="${rowCls}${sel?' selected':''}">
+    const dd = r.daidien ? '🧑‍💼 '+hlMark(r.daidien,q) : '<span style="color:#b3c2c8">—</span>';
+    return `<tr class="${rowCls}${sel?' selected':''}" data-rid="${esc(r.id||'')}">
       <td class="stt">${i+1}</td>
       <td>${r.f ? '<span class="f-badge" title="'+esc(r.f)+'">📁 '+((r.fi??0)+1)+'</span>' : '<span style="color:#b3c2c8">—</span>'}</td>
-      <td>${r.daidien ? '🧑‍💼 '+esc(r.daidien) : '<span style="color:#b3c2c8">—</span>'}</td>
-      <td><b>${esc(r.ten)}</b></td>
-      <td class="phone">${esc(r.dienthoai)}</td>
-      <td>${esc(r.diachi)}</td>
+      <td class="editable" data-id="${esc(r.id||'')}" data-k="daidien">${dd}<span class="edit-hint">✎ sửa</span></td>
+      <td class="editable" data-id="${esc(r.id||'')}" data-k="ten"><b>${hlMark(r.ten,q)}</b><span class="edit-hint">✎ sửa</span></td>
+      <td class="phone editable" data-id="${esc(r.id||'')}" data-k="dienthoai">${hlMark(r.dienthoai,q)}<span class="edit-hint">✎</span></td>
+      <td class="editable" data-id="${esc(r.id||'')}" data-k="diachi">${hlMark(r.diachi,q)}<span class="edit-hint">✎ sửa</span></td>
       <td>${ktCell}</td>
       <td class="sel-cell"><input type="checkbox" class="cbx row-sel" data-id="${esc(r.id||'')}" ${sel?'checked':''}></td>
     </tr>`;
@@ -711,8 +924,15 @@ function renderTable(){
     + " · Kết nối được: <b style='color:var(--red)'>"+okCount+"</b>"
     + " · Từ chối (sẵn sàng xoá): <b style='color:#6e7a81'>"+tcCount+"</b>"
     + (pending.length ? ' · <b style="color:var(--green)">'+pending.length+' hàng mới chưa lưu</b>' : "");
+  updateFilterInfo(view.length);
   $("btnRun").disabled = !rows.length;
   refreshSelUI();
+}
+
+function updateFilterInfo(shown){
+  const el = $("fInfo");
+  if(!el) return;
+  el.textContent = isFiltering() ? ("Hiển thị " + shown + "/" + rows.length + " KH") : "";
 }
 
 /* ---------- Cài đặt: cập nhật live lên Firebase khi đang chạy ---------- */
@@ -741,6 +961,7 @@ settingIds.forEach(id => $(id).addEventListener("input", () => {
   }
 }));
 refreshLabels();
+bindFilters();
 
 /* ---------- Điều khiển ---------- */
 $("btnRun").addEventListener("click", async () => {
