@@ -381,38 +381,107 @@ function readFiles(list){
   });
 }
 
+/* ---------- Nhận diện cột THÔNG MINH & LINH HOẠT ----------
+   Đích: Tên khách hàng · Đại diện Pháp luật · Điện thoại · Địa chỉ.
+   Chấm điểm ĐỘC LẬP từng trường theo tiêu đề (mỗi cột được xét cho
+   cả 4 trường, rồi ghép cặp tối ưu), hỗ trợ mọi thứ tự cột. Không có
+   tiêu đề rõ ràng → suy luận theo NỘI DUNG. Cột nào không có → để TRỐNG. */
+
+/* mẫu nhận diện tiêu đề cho từng trường (điểm cao = chắc chắn hơn) */
+const HDR_RULES = {
+  dienthoai: [ [/(dien.?thoai|so.?dt|sdt|phone|mobile|hotline|zalo|lien.?he.?sdt)/,10],
+               [/(^dt$|\bdt\b|\bso\b.*\bdt\b)/,7] ],
+  diachi:    [ [/(dia.?chi|address|noi.?o|thuong.?tru|tru.?so|d\/c)/,10], [/(^dc$|\bdc\b)/,6] ],
+  daidien:   [ [/(dai.?dien.?phap.?luat|nguoi.?dai.?dien|dai.?dien|phap.?ly|phap.?luat)/,10],
+               [/(nguoi.?lien.?he|lien.?he|contact.?person|contact|rep(resentative)?)/,7],
+               [/(giam.?doc|chu.?ho|chu.?co.?so|nguoi.?phu.?trach)/,6] ],
+  ten:       [ [/(ten.?khach.?hang|ten.?kh|ten.?cong.?ty|ten.?doanh.?nghiep|ten.?co.?so|customer.?name)/,10],
+               [/(khach.?hang|customer|company|don.?vi|co.?so|doanh.?nghiep|cua.?hang|nha.?thuoc|hieu.?thuoc)/,8],
+               [/(^ten$|\bten\b|\bname\b|ho.?ten|ho.?va.?ten)/,6] ]
+};
+const looksPhone = v => { const s=String(v??"").replace(/[^\d]/g,""); return s.length>=8 && s.length<=13; };
+const looksAddr  = v => { const s=norm(v); return s.length>=12 && /\d/.test(s) && /[,\/]| (p|q|tp|tt|huyen|quan|phuong|xa|duong|so)\b/i.test(flat(s)); };
+
+function scoreHeaderRow(row){
+  const cells = row.map(flat);
+  let sc = 0;
+  cells.forEach(h => { for(const f in HDR_RULES) for(const [re,w] of HDR_RULES[f]) if(re.test(h)){ sc+=w; break; } });
+  return sc;
+}
+
 function parseSheet(arr, fileName){
   if(!arr.length) return [];
-  let hIdx = 0, cTen=-1, cDT=-1, cDC=-1, cDD=-1;
-  outer:
-  for(let i=0;i<Math.min(arr.length,10);i++){
-    for(let j=0;j<arr[i].length;j++){
-      const h = flat(arr[i][j]);
-      if(/ten.*(khach|kh\b)|khach.?hang|customer|^ten$/.test(h)){ hIdx=i; break outer; }
-    }
+
+  /* 1) Tìm dòng tiêu đề = dòng trong 12 dòng đầu có tổng điểm khớp cao nhất.
+        Loại trừ dòng chứa dữ liệu thật: header hầu như không có SĐT/số dài. */
+  let hIdx = -1, bestScore = 0;
+  for(let i=0;i<Math.min(arr.length,12);i++){
+    const row = arr[i] || [];
+    if(row.some(c => looksPhone(c))) continue;    // có SĐT → là dòng dữ liệu, bỏ qua
+    const s = scoreHeaderRow(row);
+    if(s > bestScore){ bestScore = s; hIdx = i; }
   }
-  const header = arr[hIdx].map(flat);
-  header.forEach((h,j)=>{
-    if(cDD<0 && /(nguoi.?)?dai.?dien|lien.?he|contact|rep(resentative)?\b/.test(h)) cDD=j;
-    else if(cTen<0 && /ten|khach|customer|name/.test(h)) cTen=j;
-    else if(cDT<0 && /dien.?thoai|sdt|phone|so.?dt|dt\b/.test(h)) cDT=j;
-    else if(cDC<0 && /dia.?chi|address|d\/c/.test(h)) cDC=j;
-  });
-  // Fallback: ≥4 cột → Đại diện | Tên | ĐT | Địa chỉ ; 3 cột → Tên | ĐT | Địa chỉ
-  if(cTen<0 && cDT<0 && cDC<0){
-    const w = (arr[hIdx]||[]).length;
-    if(w>=4 && cDD<0){ cDD=0; cTen=1; cDT=2; cDC=3; }
-    else { cTen=0; cDT=1; cDC=2; }
-  } else {
-    if(cTen<0) cTen=0; if(cDT<0) cDT=1; if(cDC<0) cDC=2;
+  const hasHeader = hIdx >= 0 && bestScore >= 6;
+  if(!hasHeader) hIdx = -1;                       // không có header → suy luận theo nội dung
+
+  /* 2) Gán cột theo tiêu đề — chấm điểm độc lập rồi ghép cặp tham lam
+        (mỗi cột chỉ dùng cho 1 trường, ưu tiên khớp điểm cao nhất) */
+  const col = { ten:-1, daidien:-1, dienthoai:-1, diachi:-1 };
+  if(hasHeader){
+    const header = arr[hIdx].map(flat);
+    const cand = [];                             // {field, j, score}
+    header.forEach((h,j) => {
+      if(!h) return;
+      for(const f in HDR_RULES){ let best=0; for(const [re,w] of HDR_RULES[f]) if(re.test(h)) best=Math.max(best,w);
+        if(best) cand.push({field:f, j, score:best}); }
+    });
+    cand.sort((a,b)=>b.score-a.score);
+    const usedCol = new Set();
+    cand.forEach(c => { if(col[c.field]<0 && !usedCol.has(c.j)){ col[c.field]=c.j; usedCol.add(c.j); } });
   }
-  return arr.slice(hIdx+1).map(r => ({
+
+  const body = arr.slice(hIdx + 1).filter(r => r.some(c => norm(c) !== ""));
+  const width = Math.max(...arr.map(r=>r.length), 0);
+
+  /* 3) Suy luận cột còn thiếu theo NỘI DUNG (quét toàn bảng) */
+  const filled = f => col[f] >= 0;
+  const usedCols = () => new Set(Object.values(col).filter(v=>v>=0));
+
+  if(!filled("dienthoai")){                       // cột nhiều ô giống SĐT nhất
+    let bj=-1, bhit=-1;
+    for(let j=0;j<width;j++){ if(usedCols().has(j)) continue;
+      let hit=0; body.forEach(r=>{ if(looksPhone(r[j])) hit++; });
+      if(hit>bhit && hit>=Math.max(1, body.length*0.3)){ bhit=hit; bj=j; } }
+    if(bj>=0) col.dienthoai=bj;
+  }
+  if(!filled("diachi")){                           // cột nhiều ô giống địa chỉ nhất
+    let bj=-1, bhit=-1;
+    for(let j=0;j<width;j++){ if(usedCols().has(j)) continue;
+      let hit=0; body.forEach(r=>{ if(looksAddr(r[j])) hit++; });
+      if(hit>bhit && hit>=Math.max(1, body.length*0.3)){ bhit=hit; bj=j; } }
+    if(bj>=0) col.diachi=bj;
+  }
+  if(!filled("ten")){                              // cột chữ đầu tiên chưa dùng, nhiều text nhất
+    let bj=-1, bhit=-1;
+    for(let j=0;j<width;j++){ if(usedCols().has(j)) continue;
+      let hit=0; body.forEach(r=>{ const s=norm(r[j]); if(s && !looksPhone(s) && isNaN(Number(s))) hit++; });
+      if(hit>bhit){ bhit=hit; bj=j; } }
+    if(bj>=0) col.ten=bj;
+  }
+  if(!filled("daidien")){                          // cột text còn lại chưa dùng
+    for(let j=0;j<width;j++){ if(usedCols().has(j)) continue;
+      let hit=0; body.forEach(r=>{ const s=norm(r[j]); if(s && !looksPhone(s) && isNaN(Number(s))) hit++; });
+      if(hit >= Math.max(1, body.length*0.3)){ col.daidien=j; break; } }
+  }
+
+  /* 4) Trích dữ liệu — cột không xác định để TRỐNG */
+  return body.map(r => ({
     id: newId(),
     f: norm(fileName),
-    daidien: cDD>=0 ? norm(r[cDD]) : "",
-    ten: norm(r[cTen]),
-    dienthoai: normPhone(r[cDT]),
-    diachi: norm(r[cDC])
+    daidien:   col.daidien   >= 0 ? norm(r[col.daidien])        : "",
+    ten:       col.ten       >= 0 ? norm(r[col.ten])            : "",
+    dienthoai: col.dienthoai >= 0 ? normPhone(r[col.dienthoai]) : "",
+    diachi:    col.diachi    >= 0 ? norm(r[col.diachi])         : ""
   })).filter(r => r.ten || r.dienthoai || r.diachi || r.daidien);
 }
 
